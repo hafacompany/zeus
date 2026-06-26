@@ -270,7 +270,7 @@ function getHtmlContent() {
                 background: rgba(255, 95, 86, 0.1);
                 border: 2px solid #990800;
                 color: #ffe6e6;
-                border-radius: 40px;
+                border-radius: 20px;
                 font-size: 13px;
                 display: none;
                 text-align: center;
