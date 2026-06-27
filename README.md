@@ -60,10 +60,19 @@
 
 > 💡 **توجه:** تمامی مراحل ساخت Worker، پایگاه داده، اتصال دامنه‌ها و تزریق متغیرهای محیطی (Secrets) توسط ربات دیپلوی انجام می‌پذیرد.
 
-### مراحل اجرا:
 
-۱. **ورود به پایگاه دیپلوی:** ابتدا به پورتال استقرار خودکار مراجعه نمایید:
-<br>🔗 **[https://zeus-panel.ir-netlify.workers.dev](https://zeus-panel.ir-netlify.workers.dev/)**
+ ### مراحل اجرا:
+
+۱. **ورود به سایت دیپلوی:** ابتدا به سایت استقرار خودکار مراجعه نمایید:
+
+<br>
+<div align="center">
+  <h2>🚀 <a href="https://zeus-panel.ir-netlify.workers.dev/"><b>ورود به سایت استقرار خودکار زئوس</b></a> 🚀</h2>
+  <a href="https://zeus-panel.ir-netlify.workers.dev/"><img src="https://img.shields.io/badge/Deploy-Zeus_Panel-00792D?style=for-the-badge&logo=cloudflare&logoColor=white" alt="Deploy Zeus"></a>
+  <br><br>
+  <a href="https://zeus-panel.ir-netlify.workers.dev/" dir="ltr"><b>https://zeus-panel.ir-netlify.workers.dev</b></a>
+</div>
+<br>
 
 ۲. **اخذ مجوز (Token):** بر روی گزینه **«دریافت توکن»** کلیک نمایید. این لینک شما را به پنل کلودفلر هدایت نموده تا دسترسی‌های امنیتی لازم (Permissions) جهت استقرار منابع ایجاد گردد. در انتهای صفحه باز شده، توکن را تایید و کپی کنید.
 
