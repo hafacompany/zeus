@@ -1,6 +1,7 @@
 
 
 
+
   <img width="100%" alt="Zeus Panel Dark Mode" 
        src="https://raw.githubusercontent.com/IR-NETLIFY/zeus/refs/heads/main/photos/dark.png" 
        style="border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.2); margin-bottom: 15px;" />
@@ -100,9 +101,25 @@
  </picture>
 </a>
 
+---
+
+# 💰 حمایت مالی (Donate)
+
+<p align="center"> ساخته‌ شده با ❤️</p>
+
+ <p align="center"> https://donatonion.ir-netlify.workers.dev </p>
+
+<p align="center"> از حمایت شما متشکریم 🙏</p>
+
+
+
+
+---
+
 ## ⚖️ حق نشر و اعتبارات
 
-این پنل توسط ماکان نوشته شده و من فقط آن را توسعه داده ام:
+
+این پنل توسط ماکان نوشته شده و من فقط آن را توسعه داده ام
 
 * **سازنده اولیه:** نسخه پایه پروژه ([EasySNI](https://github.com/macan-dev/EasySNI)) توسط  ([EzAccess1](https://t.me/EzAccess1)) ایجاد شده است.
 * **توسعه‌دهنده فعلی:** ارتقاء پنل، افزودن قابلیت‌های پیشرفته، توسعه رابط کاربری جدید و پیاده‌سازی سیستم دیپلوی خودکار توسط  ([IR_NETLIFY](https://t.me/IR_NETLIFY)) انجام شده است.
