@@ -1,8 +1,4 @@
 import { connect } from "cloudflare:sockets";
-
-// ==========================================================
-// ۱. حافظه‌های موقت و متغیرهای سراسری (GLOBAL STATE)
-// ==========================================================
 const GLOBAL_TRAFFIC_CACHE = new Map();
 const ACTIVE_CONNECTIONS_COUNT = new Map();
 const GLOBAL_LAST_ACTIVE_WRITE = new Map();
@@ -12,10 +8,6 @@ const DNS_CACHE = new Map();
 const USER_REQ_CACHE = new Map();
 let GLOBAL_REQ_COUNT = 0;
 let GLOBAL_LAST_REQ_WRITE = 0;
-
-// ==========================================================
-// ۲. ثوابت و تنظیمات اصلی (CONSTANTS)
-// ==========================================================
 const DNS_CACHE_TTL = 5 * 60 * 1000;
 const DOH_RESOLVER = "https://cloudflare-dns.com/dns-query";
 const UPSTREAM_BUNDLE_TARGET_BYTES = 16 * 1024;
@@ -26,55 +18,39 @@ const DOWNSTREAM_GRAIN_TAIL_THRESHOLD = 512;
 const DOWNSTREAM_GRAIN_SILENT_MS = 1;
 const TCP_CONCURRENCY = 2;
 const PRELOAD_RACE_DIAL = true;
-
-// ==========================================================
-// ۳. نقطه ورود اصلی ورکر (MAIN FETCH HANDLER)
-// ==========================================================
 export default {
 	async fetch(request, env, ctx) {
 		trackRequest(env, ctx);
 		await DbService.ensureSchema(env.DB);
 		const url = new URL(request.url);
-
 		if (Router.isWebSocketUpgrade(request) && url.pathname === "/In_Panel_Rayeghan_Ast_Va_Gheyre_Ghabele_Foroosh") {
 			return await Router.handleWebSocket(request, env, ctx);
 		}
-
 		if (Router.isSubscriptionPath(url.pathname)) {
 			return await Router.handleSubscription(url, env);
 		}
-
 		if (url.pathname.startsWith("/api/") || url.pathname === "/locations") {
 			return await Router.handleApi(request, url, env, ctx);
 		}
-
 		if (url.pathname === "/panel" || url.pathname === "/login") {
 			return await Router.handlePanel(request, env);
 		}
-
 		if (url.pathname.startsWith("/status/")) {
 			return await Router.handleUserStatus(url, env);
 		}
-
 		return new Response(HTML_TEMPLATES.nginx, {
 			headers: { "Content-Type": "text/html; charset=utf-8" },
 		});
 	},
 };
-
-// ==========================================================
-// ۴. روتر و هدایت‌کننده‌های آدرس (ROUTER & CONTROLLERS)
-// ==========================================================
 const Router = {
 	isWebSocketUpgrade(request) {
 		const upgradeHeader = (request.headers.get("Upgrade") || "").toLowerCase();
 		return upgradeHeader === "websocket";
 	},
-
 	isSubscriptionPath(pathname) {
 		return pathname.startsWith("/sub/") || pathname.startsWith("/feed/");
 	},
-
 	async handleWebSocket(request, env, ctx) {
 		try {
 			let proxyIP = "proxyip.cmliussss.net";
@@ -84,32 +60,27 @@ const Router = {
 					proxyIP = proxyRow.value;
 				}
 			} catch (e) {}
-
 			const mockStoredData = { proxy_ip: proxyIP };
 			return handleVLESS(env, mockStoredData, ctx);
 		} catch (e) {
 			return new Response("Internal Server Error", { status: 500 });
 		}
 	},
-
 	async handleSubscription(url, env) {
 		const isSubPath = url.pathname.startsWith("/sub/");
 		const offset = isSubPath ? 5 : 6;
 		let subUser = decodeURIComponent(url.pathname.slice(offset));
 		const host = url.hostname;
-
 		try {
 			const user = await env.DB.prepare("SELECT * FROM users WHERE username = ? OR uuid = ?").bind(subUser, subUser).first();
 			if (!user || user.connection_type !== atob("dmxlc3M=")) {
 				return new Response("Not Found", { status: 404 });
 			}
-
 			return await SubscriptionService.generateText(user, host);
 		} catch (err) {
 			return new Response("Error building config: " + err.message, { status: 500 });
 		}
 	},
-
 	async handlePanel(request, env) {
 		const hasPassword = await DbService.getPanelPassword(env.DB);
 		if (!hasPassword) {
@@ -117,14 +88,12 @@ const Router = {
 				headers: { "Content-Type": "text/html; charset=utf-8" },
 			});
 		}
-
 		const authorized = await DbService.verifyApiAuth(request, env);
 		if (!authorized) {
 			return new Response(HTML_TEMPLATES.login, {
 				headers: { "Content-Type": "text/html; charset=utf-8" },
 			});
 		}
-
 		return new Response(HTML_TEMPLATES.panel, {
 			headers: {
 				"Content-Type": "text/html; charset=utf-8",
@@ -134,7 +103,6 @@ const Router = {
 			},
 		});
 	},
-
 	async handleUserStatus(url, env) {
 		const username = decodeURIComponent(url.pathname.slice(8));
 		if (!username) {
@@ -170,10 +138,8 @@ const Router = {
 			return new Response("Error: " + err.message, { status: 500 });
 		}
 	},
-
 	async handleApi(request, url, env, ctx) {
 		const hasPassword = await DbService.getPanelPassword(env.DB);
-
 		if (url.pathname === "/api/setup-password" && request.method === "POST") {
 			if (hasPassword) {
 				return new Response(JSON.stringify({ error: "رمز عبور از قبل تعریف شده است" }), {
@@ -197,7 +163,6 @@ const Router = {
 				},
 			});
 		}
-
 		if (url.pathname === "/api/login" && request.method === "POST") {
 			const { password } = await request.json();
 			const hashedInput = await DbService.sha256(password);
@@ -215,7 +180,6 @@ const Router = {
 				headers: { "Content-Type": "application/json; charset=utf-8" },
 			});
 		}
-
 		if (url.pathname === "/api/logout" && request.method === "POST") {
 			return new Response(JSON.stringify({ success: true }), {
 				headers: {
@@ -224,7 +188,6 @@ const Router = {
 				},
 			});
 		}
-
 		const authorized = await DbService.verifyApiAuth(request, env);
 		if (!authorized) {
 			return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -232,7 +195,6 @@ const Router = {
 				headers: { "Content-Type": "application/json; charset=utf-8" },
 			});
 		}
-
 		if (url.pathname === "/api/update-panel" && request.method === "POST") {
 			if (!env.CF_API_TOKEN || !env.CF_ACCOUNT_ID) {
 				return new Response(JSON.stringify({ error: "توکن یا اکانت آیدی کلودفلر تنظیم نشده است. لطفا با سایت زیر اپدیت کنید https://zeus-panel.ir-netlify.workers.dev/" }), { status: 400, headers: { "Content-Type": "application/json" } });
@@ -248,12 +210,10 @@ const Router = {
 				if (!githubRes.ok) throw new Error("خطا در دریافت سورس جدید از گیت‌هاب");
 				const newCode = await githubRes.text();
 				const scriptName = env.WORKER_NAME || url.hostname.split(".")[0];
-
 				const bindingsRes = await fetch(`https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/workers/scripts/${scriptName}/bindings`, {
 					headers: { Authorization: "Bearer " + env.CF_API_TOKEN },
 				});
 				const bindingsData = await bindingsRes.json();
-
 				if (!bindingsData.success) throw new Error("عدم دسترسی به تنظیمات ورکر. توکن نامعتبر است.");
 				const newBindings = [];
 				for (const b of bindingsData.result) {
@@ -265,7 +225,6 @@ const Router = {
 						newBindings.push({ type: "secret_text", name: "CF_ACCOUNT_ID", text: env.CF_ACCOUNT_ID });
 					}
 				}
-
 				const metadata = {
 					main_module: "zeus.js",
 					compatibility_date: "2024-02-08",
@@ -287,7 +246,6 @@ const Router = {
 				return new Response(JSON.stringify({ error: errorMsg }), { status: 500, headers: { "Content-Type": "application/json" } });
 			}
 		}
-
 		if (url.pathname === "/api/change-password" && request.method === "POST") {
 			const { current_password, new_password } = await request.json();
 			if (!current_password || !new_password) {
@@ -319,7 +277,6 @@ const Router = {
 				},
 			});
 		}
-
 		if (url.pathname === "/locations") {
 			try {
 				const response = await fetch("https://speed.cloudflare.com/locations", {
@@ -333,7 +290,6 @@ const Router = {
 				return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: { "Content-Type": "application/json" } });
 			}
 		}
-
 		if (url.pathname === "/api/proxy-ip") {
 			if (request.method === "POST") {
 				const { proxy_ip, iata, frag_len, frag_int } = await request.json();
@@ -343,7 +299,6 @@ const Router = {
 				if (frag_int !== undefined) await env.DB.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('frag_int', ?)").bind(frag_int).run();
 				return new Response(JSON.stringify({ success: true }), { headers: { "Content-Type": "application/json" } });
 			}
-
 			if (request.method === "GET") {
 				const rowIp = await env.DB.prepare("SELECT value FROM settings WHERE key = 'proxy_ip'").first();
 				const rowIata = await env.DB.prepare("SELECT value FROM settings WHERE key = 'proxy_location_iata'").first();
@@ -360,15 +315,11 @@ const Router = {
 				);
 			}
 		}
-
-		// API: مدیریت کاربران
 		if (url.pathname.startsWith("/api/users")) {
 			const pathParts = url.pathname.split("/");
-			const isUserAction = pathParts.length > 3; // /api/users/username
-
+			const isUserAction = pathParts.length > 3;
 			if (isUserAction) {
 				const username = decodeURIComponent(pathParts.pop());
-
 				if (request.method === "PUT") {
 					const body = await request.json();
 					if (body.toggle_only !== undefined) {
@@ -415,7 +366,6 @@ const Router = {
 						return new Response(JSON.stringify({ success: true }), { headers: { "Content-Type": "application/json" } });
 					}
 				}
-
 				if (request.method === "DELETE") {
 					await env.DB.prepare("DELETE FROM users WHERE username = ?").bind(username).run();
 					return new Response(JSON.stringify({ success: true }), { headers: { "Content-Type": "application/json" } });
@@ -432,38 +382,30 @@ const Router = {
 						is_online: user.last_active && now - user.last_active < 65000 ? 1 : 0,
 						online_count: ACTIVE_CONNECTIONS_COUNT.get(user.username) || 0,
 					}));
-
 					let cfReqs = { today: 0, total: 0 };
 					try {
 						const liveCf = await getCfUsage(env);
 						const todayStr = new Date().toISOString().split("T")[0];
-
 						const dateRow = await env.DB.prepare("SELECT value FROM settings WHERE key = 'req_last_date'").first();
 						const totalRow = await env.DB.prepare("SELECT value FROM settings WHERE key = 'req_total'").first();
-
 						let dbTotal = totalRow ? parseInt(totalRow.value) || 0 : 0;
 						let dbToday = 0;
-
 						if (dateRow && dateRow.value === todayStr) {
 							const todayRow = await env.DB.prepare("SELECT value FROM settings WHERE key = 'req_today'").first();
 							dbToday = todayRow ? parseInt(todayRow.value) || 0 : 0;
 						}
-
 						if (liveCf.today > dbToday) {
 							dbToday = liveCf.today;
 							await env.DB.prepare("INSERT INTO settings (key, value) VALUES ('req_today', ?) ON CONFLICT(key) DO UPDATE SET value = ?").bind(String(dbToday), String(dbToday)).run();
 							await env.DB.prepare("INSERT INTO settings (key, value) VALUES ('req_last_date', ?) ON CONFLICT(key) DO UPDATE SET value = ?").bind(todayStr, todayStr).run();
 						}
-
 						if (liveCf.total > dbTotal) {
 							dbTotal = liveCf.total;
 							await env.DB.prepare("INSERT INTO settings (key, value) VALUES ('req_total', ?) ON CONFLICT(key) DO UPDATE SET value = ?").bind(String(dbTotal), String(dbTotal)).run();
 						}
-
 						cfReqs.today = dbToday + GLOBAL_REQ_COUNT;
 						cfReqs.total = dbTotal + GLOBAL_REQ_COUNT;
 					} catch (e) {}
-
 					return new Response(
 						JSON.stringify({
 							users: enrichedUsers,
@@ -479,7 +421,6 @@ const Router = {
 						},
 					);
 				}
-
 				if (request.method === "POST") {
 					const { username, limit_gb, expiry_days, limit_req, ips, tls, port, fingerprint, max_connections } = await request.json();
 					if (!username) {
@@ -497,17 +438,11 @@ const Router = {
 				}
 			}
 		}
-
 		return new Response(JSON.stringify({ error: "Not Found" }), { status: 404, headers: { "Content-Type": "application/json" } });
 	},
 };
-
-// ==========================================================
-// ۵. مدیریت دیتابیس و اعتبارسنجی (DATABASE SERVICE)
-// ==========================================================
 let schemaEnsured = false;
 let cachedPanelPassword = null;
-
 const DbService = {
 	async ensureSchema(db) {
 		if (schemaEnsured) return;
@@ -557,7 +492,6 @@ const DbService = {
 		} catch (e) {}
 		schemaEnsured = true;
 	},
-
 	async getPanelPassword(db) {
 		if (cachedPanelPassword !== null) return cachedPanelPassword;
 		try {
@@ -568,12 +502,10 @@ const DbService = {
 			return null;
 		}
 	},
-
 	async setPanelPassword(db, password) {
 		await db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('panel_password', ?)").bind(password).run();
 		cachedPanelPassword = password;
 	},
-
 	async verifyApiAuth(request, env) {
 		const storedPasswordHash = await this.getPanelPassword(env.DB);
 		if (!storedPasswordHash) return true;
@@ -583,7 +515,6 @@ const DbService = {
 		const sessionToken = sessionCookie.split("=")[1].trim();
 		return sessionToken === storedPasswordHash;
 	},
-
 	async sha256(message) {
 		const msgBuffer = new TextEncoder().encode(message);
 		const hashBuffer = await crypto.subtle.digest("SHA-256", msgBuffer);
@@ -591,10 +522,6 @@ const DbService = {
 		return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 	},
 };
-
-// ==========================================================
-// ۶. مدیریت تولید کانفیگ‌ها (SUBSCRIPTION SERVICE)
-// ==========================================================
 const SubscriptionService = {
 	async generateText(user, host) {
 		let ips = [host];
@@ -611,38 +538,47 @@ const SubscriptionService = {
 			.filter((p) => p.length > 0);
 		const fp = user.fingerprint || "chrome";
 		const links = [];
-
 		const m1 = decodeURIComponent("%E2%9A%A0%EF%B8%8F%D9%BE%D9%86%D9%84%20%D8%B1%D8%A7%DB%8C%DA%AF%D8%A7%D9%86%20%D9%88%20%D8%BA%DB%8C%D8%B1%20%D9%82%D8%A7%D8%A8%D9%84%20%D9%81%D8%B1%D9%88%D8%B4%E2%9A%A0%EF%B8%8F");
 		const m2 = decodeURIComponent("%F0%9F%9A%80%40IR_NETLIFY%20%D8%B3%D8%A7%D8%AE%D8%AA%20%D8%B1%D8%A7%DB%8C%DA%AF%D8%A7%D9%86%F0%9F%9A%80");
-
 		links.push(atob("dmxlc3M6Ly8=") + user.uuid + "@0.0.0.0:1?encryption=none&security=none&type=ws&host=" + host + "&path=%2FIn_Panel_Rayeghan_Ast_Va_Gheyre_Ghabele_Foroosh#" + encodeURIComponent(m1));
 		links.push(atob("dmxlc3M6Ly8=") + user.uuid + "@0.0.0.0:1?encryption=none&security=none&type=ws&host=" + host + "&path=%2FIn_Panel_Rayeghan_Ast_Va_Gheyre_Ghabele_Foroosh#" + encodeURIComponent(m2));
-
+		let remVol = "Unlimited";
+		if (user.limit_gb) {
+			let rem = user.limit_gb - (user.used_gb || 0);
+			remVol = rem > 0 ? rem.toFixed(2) + "GB" : "0GB";
+		}
+		let remTime = "Unlimited";
+		if (user.expiry_days && user.created_at) {
+			const created = new Date(user.created_at);
+			const expiryDate = new Date(created.getTime() + user.expiry_days * 24 * 60 * 60 * 1000);
+			const diffDays = Math.ceil((expiryDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+			remTime = diffDays > 0 ? diffDays + "Days" : "0Days";
+		}
+		let remReq = "Unlimited";
+		if (user.limit_req) {
+			let rem = user.limit_req - (user.used_req || 0);
+			remReq = rem > 0 ? rem.toLocaleString() + "Req" : "0Req";
+		}
+		const infoRemark = "📊 remaining | \u200E" + remVol + " | \u200E" + remTime + " | \u200E" + remReq;
+		links.push(atob("dmxlc3M6Ly8=") + user.uuid + "@" + host + ":80?path=%2FIn_Panel_Rayeghan_Ast_Va_Gheyre_Ghabele_Foroosh&security=none&encryption=none&host=" + host + "&fp=" + fp + "&type=ws#" + encodeURIComponent(infoRemark));
 		ips.forEach((ip) => {
 			ports.forEach((portStr) => {
 				const isTlsPort = ["443", "2053", "2083", "2087", "2096", "8443"].includes(portStr);
 				const tlsVal = isTlsPort ? "tls" : "none";
 				const remark = user.username + " | " + ip + " | " + portStr;
-
 				links.push(atob("dmxlc3M6Ly8=") + user.uuid + "@" + ip + ":" + portStr + "?path=%2FIn_Panel_Rayeghan_Ast_Va_Gheyre_Ghabele_Foroosh&security=" + tlsVal + "&encryption=none&insecure=0&host=" + host + "&fp=" + fp + "&type=ws&allowInsecure=0&sni=" + host + "#" + encodeURIComponent(remark));
 			});
 		});
-
 		const noise = ["# System Update Feed: OK", "# Sync Code: " + Math.random().toString(36).slice(2, 10), "# Version: 2.10.1", "# Description: Secure Node Configurations", ""].join("\n");
-
 		const plainContent = noise + links.join("\n");
 		const subContent = btoa(unescape(encodeURIComponent(plainContent)));
-
 		const downloadBytes = Math.floor((user.used_gb || 0) * 1073741824);
 		const totalBytes = user.limit_gb ? Math.floor(user.limit_gb * 1073741824) : 0;
 		let expireTimestamp = 0;
-
 		if (user.expiry_days && user.created_at) {
 			expireTimestamp = Math.floor((new Date(user.created_at).getTime() + user.expiry_days * 86400000) / 1000);
 		}
-
 		const subUserInfo = `upload=0; download=${downloadBytes}; total=${totalBytes}; expire=${expireTimestamp}`;
-
 		return new Response(subContent, {
 			headers: {
 				"Content-Type": "text/plain; charset=utf-8",
@@ -653,24 +589,16 @@ const SubscriptionService = {
 		});
 	},
 };
-
-// ==========================================================
-// ۷. موتور اتصال فیلترشکن و مدیریت ترافیک (VLESS CORE ENGINE)
-// ==========================================================
 async function flushExpiredTraffic(env) {
 	const now = Date.now();
 	for (const [uname, cachedBytes] of GLOBAL_TRAFFIC_CACHE.entries()) {
 		const cachedReqs = USER_REQ_CACHE.get(uname) || 0;
 		if (cachedBytes <= 0 && cachedReqs <= 0) continue;
-
 		if (GLOBAL_WRITE_LOCK.get(uname)) continue;
-
 		const lastActive = GLOBAL_LAST_ACTIVE_WRITE.get(uname) || 0;
 		const activeCount = ACTIVE_CONNECTIONS_COUNT.get(uname) || 0;
-
 		if (activeCount <= 0 || now - lastActive > 65000) {
 			GLOBAL_WRITE_LOCK.set(uname, true);
-
 			const deltaGb = cachedBytes / (1024 * 1024 * 1024);
 			try {
 				await env.DB.prepare("UPDATE users SET used_gb = used_gb + ?, used_req = used_req + ? WHERE username = ?").bind(deltaGb, cachedReqs, uname).run();
@@ -685,17 +613,14 @@ async function flushExpiredTraffic(env) {
 		}
 	}
 }
-
 async function handleVLESS(env, storedData = null, ctx = null) {
 	const socketPair = new WebSocketPair();
 	const [clientSock, serverSock] = Object.values(socketPair);
 	serverSock.accept();
 	serverSock.binaryType = "arraybuffer";
-
 	let username = null;
 	let tickCount = 0;
 	let validUUID = null;
-
 	function addBytes(bytes) {
 		if (bytes <= 0) return;
 		if (!username) {
@@ -706,33 +631,25 @@ async function handleVLESS(env, storedData = null, ctx = null) {
 			bytes += uncountedBytes;
 			uncountedBytes = 0;
 		}
-
 		let current = GLOBAL_TRAFFIC_CACHE.get(username) || 0;
 		GLOBAL_TRAFFIC_CACHE.set(username, current + bytes);
 		GLOBAL_LAST_ACTIVE_WRITE.set(username, Date.now());
-
 		if (GLOBAL_WRITE_LOCK.get(username)) return;
-
 		let lastDbWrite = GLOBAL_LAST_DB_WRITE.get(username) || 0;
 		let now = Date.now();
 		let thresholdBytes = 10 * 1024 * 1024;
-
 		if (current >= thresholdBytes || (current > 0 && now - lastDbWrite > 60000)) {
 			GLOBAL_WRITE_LOCK.set(username, true);
 			let toCommit = GLOBAL_TRAFFIC_CACHE.get(username) || 0;
 			let toCommitReq = USER_REQ_CACHE.get(username) || 0;
-
 			if (toCommit <= 0 && toCommitReq <= 0) {
 				GLOBAL_WRITE_LOCK.set(username, false);
 				return;
 			}
-
 			GLOBAL_TRAFFIC_CACHE.set(username, 0);
 			USER_REQ_CACHE.set(username, 0);
 			GLOBAL_LAST_DB_WRITE.set(username, now);
-
 			let deltaGb = toCommit / (1024 * 1024 * 1024);
-
 			let writeTask = async () => {
 				try {
 					await env.DB.prepare("UPDATE users SET used_gb = used_gb + ?, used_req = used_req + ? WHERE username = ?").bind(deltaGb, toCommitReq, username).run();
@@ -742,33 +659,25 @@ async function handleVLESS(env, storedData = null, ctx = null) {
 					GLOBAL_WRITE_LOCK.set(username, false);
 				}
 			};
-
 			if (ctx) ctx.waitUntil(writeTask());
 			else writeTask();
 		}
 	}
-
 	let isOfflineSet = false;
 	const setOffline = () => {
 		if (isOfflineSet) return;
 		isOfflineSet = true;
-
 		const uname = username;
 		if (!uname) return;
-
 		let activeCount = ACTIVE_CONNECTIONS_COUNT.get(uname) || 1;
 		activeCount = activeCount - 1;
-
 		if (activeCount <= 0) {
 			ACTIVE_CONNECTIONS_COUNT.delete(uname);
 			let cachedBytes = GLOBAL_TRAFFIC_CACHE.get(uname) || 0;
 			let cachedReqs = USER_REQ_CACHE.get(uname) || 0;
-
 			if ((cachedBytes > 0 || cachedReqs > 0) && !GLOBAL_WRITE_LOCK.get(uname)) {
 				GLOBAL_WRITE_LOCK.set(uname, true);
-
 				const deltaGb = cachedBytes / (1024 * 1024 * 1024);
-
 				const writeTask = async () => {
 					try {
 						await env.DB.prepare("UPDATE users SET used_gb = used_gb + ?, used_req = used_req + ? WHERE username = ?").bind(deltaGb, cachedReqs, uname).run();
@@ -781,7 +690,6 @@ async function handleVLESS(env, storedData = null, ctx = null) {
 						GLOBAL_LAST_ACTIVE_WRITE.delete(uname);
 					}
 				};
-
 				if (ctx) {
 					ctx.waitUntil(writeTask());
 				} else {
@@ -797,18 +705,15 @@ async function handleVLESS(env, storedData = null, ctx = null) {
 			ACTIVE_CONNECTIONS_COUNT.set(uname, activeCount);
 		}
 	};
-
 	const heartbeat = setInterval(async () => {
 		if (serverSock.readyState === WebSocket.OPEN) {
 			try {
 				serverSock.send(new Uint8Array(0));
 				if (!validUUID) return;
-
 				tickCount++;
 				if (tickCount >= 1) {
 					tickCount = 0;
 					const user = await env.DB.prepare("SELECT is_active, limit_gb, used_gb, limit_req, used_req, expiry_days, created_at FROM users WHERE uuid = ?").bind(validUUID).first();
-
 					let isExpired = false;
 					if (!user || user.is_active === 0) {
 						isExpired = true;
@@ -827,14 +732,12 @@ async function handleVLESS(env, storedData = null, ctx = null) {
 							}
 						}
 					}
-
 					if (isExpired) {
 						await env.DB.prepare("UPDATE users SET is_active = 0, last_active = 0 WHERE uuid = ?").bind(validUUID).run();
 						clearInterval(heartbeat);
 						closeSocketQuietly(serverSock);
 						return;
 					}
-
 					const now = Date.now();
 					const lastRecorded = GLOBAL_LAST_ACTIVE_WRITE.get(username) || 0;
 					if (now - lastRecorded > 15000) {
@@ -847,7 +750,6 @@ async function handleVLESS(env, storedData = null, ctx = null) {
 			clearInterval(heartbeat);
 		}
 	}, 15000);
-
 	let remoteConnWrapper = { socket: null, connectingPromise: null, retryConnect: null };
 	let reqUUID = null;
 	let isHeaderParsed = false;
@@ -856,7 +758,6 @@ async function handleVLESS(env, storedData = null, ctx = null) {
 	let chunkBuffer = new Uint8Array(0);
 	let uncountedBytes = 0;
 	const proxyIP = storedData?.proxy_ip || "proxyip.cmliussss.net";
-
 	let wsChain = Promise.resolve();
 	let wsStopped = false,
 		wsFailed = false,
@@ -865,7 +766,6 @@ async function handleVLESS(env, storedData = null, ctx = null) {
 		wsQueueItems = 0;
 	let currentSocketWriter = null,
 		activeRemoteWriter = null;
-
 	const releaseRemoteWriter = () => {
 		if (activeRemoteWriter) {
 			try {
@@ -875,7 +775,6 @@ async function handleVLESS(env, storedData = null, ctx = null) {
 		}
 		currentSocketWriter = null;
 	};
-
 	const getRemoteWriter = () => {
 		const s = remoteConnWrapper.socket;
 		if (!s) return null;
@@ -886,7 +785,6 @@ async function handleVLESS(env, storedData = null, ctx = null) {
 		}
 		return activeRemoteWriter;
 	};
-
 	const upstreamQueue = createUpstreamQueue({
 		getWriter: getRemoteWriter,
 		releaseWriter: releaseRemoteWriter,
@@ -903,35 +801,27 @@ async function handleVLESS(env, storedData = null, ctx = null) {
 		},
 		name: "VlessWSQueue",
 	});
-
 	const writeToRemote = async (chunk, allowRetry = true) => {
 		return upstreamQueue.writeAndAwait(chunk, allowRetry);
 	};
-
 	const processWsMessage = async (chunk) => {
 		const bytes = chunk.byteLength || 0;
 		await addBytes(bytes);
-
 		if (isDnsQuery) {
 			await forwardVlessUDP(chunk, serverSock, null, addBytes);
 			return;
 		}
-
 		if (await writeToRemote(chunk)) return;
-
 		if (!isHeaderParsed) {
 			chunkBuffer = concatBytes(chunkBuffer, chunk);
 			if (chunkBuffer.byteLength < 24) return;
-
 			if (isHeaderParsing) return;
 			isHeaderParsing = true;
-
 			reqUUID = extractUUIDFromVless(chunkBuffer);
 			if (!reqUUID) {
 				serverSock.close();
 				return;
 			}
-
 			let user = null;
 			try {
 				user = await env.DB.prepare("SELECT * FROM users WHERE uuid = ?").bind(reqUUID).first();
@@ -943,12 +833,10 @@ async function handleVLESS(env, storedData = null, ctx = null) {
 				serverSock.close();
 				return;
 			}
-
 			if (user.limit_gb && user.used_gb >= user.limit_gb) {
 				serverSock.close();
 				return;
 			}
-
 			if (user.limit_req && user.used_req + (USER_REQ_CACHE.get(user.username) || 0) >= user.limit_req) {
 				serverSock.close();
 				return;
@@ -964,23 +852,17 @@ async function handleVLESS(env, storedData = null, ctx = null) {
 					return;
 				}
 			}
-
 			validUUID = reqUUID;
 			username = user.username;
 			isHeaderParsed = true;
-
 			let currentReqs = USER_REQ_CACHE.get(username) || 0;
 			USER_REQ_CACHE.set(username, currentReqs + 1);
-
 			let activeCount = ACTIVE_CONNECTIONS_COUNT.get(username) || 0;
-
 			if (user.max_connections && user.max_connections > 0 && activeCount >= user.max_connections) {
 				serverSock.close();
 				return;
 			}
-
 			ACTIVE_CONNECTIONS_COUNT.set(username, activeCount + 1);
-
 			if (activeCount === 0) {
 				const setOnlineTask = async () => {
 					try {
@@ -992,7 +874,6 @@ async function handleVLESS(env, storedData = null, ctx = null) {
 				if (ctx) ctx.waitUntil(setOnlineTask());
 				else setOnlineTask();
 			}
-
 			try {
 				let offset = 17;
 				const optLen = chunkBuffer[offset++];
@@ -1000,7 +881,6 @@ async function handleVLESS(env, storedData = null, ctx = null) {
 				const cmd = chunkBuffer[offset++];
 				const port = (chunkBuffer[offset++] << 8) | chunkBuffer[offset++];
 				const addrType = chunkBuffer[offset++];
-
 				let addr = "";
 				if (addrType === 1) {
 					addr = `${chunkBuffer[offset++]}.${chunkBuffer[offset++]}.${chunkBuffer[offset++]}.${chunkBuffer[offset++]}`;
@@ -1012,10 +892,8 @@ async function handleVLESS(env, storedData = null, ctx = null) {
 					offset += 16;
 					addr = "ipv6-unsupported";
 				}
-
 				const rawData = chunkBuffer.slice(offset);
 				const respHeader = new Uint8Array([chunkBuffer[0], 0]);
-
 				if (cmd === 2) {
 					if (port === 53) {
 						isDnsQuery = true;
@@ -1025,7 +903,6 @@ async function handleVLESS(env, storedData = null, ctx = null) {
 					}
 					return;
 				}
-
 				const connectTCP = async (dataPayload = null, useFallback = true) => {
 					if (remoteConnWrapper.connectingPromise) {
 						await remoteConnWrapper.connectingPromise;
@@ -1057,7 +934,6 @@ async function handleVLESS(env, storedData = null, ctx = null) {
 						}
 					}
 				};
-
 				remoteConnWrapper.retryConnect = async () => connectTCP(null, false);
 				await connectTCP(rawData, true);
 			} catch (e) {
@@ -1065,7 +941,6 @@ async function handleVLESS(env, storedData = null, ctx = null) {
 			}
 		}
 	};
-
 	const handleWsError = (err) => {
 		if (wsFailed) return;
 		wsFailed = true;
@@ -1077,11 +952,9 @@ async function handleVLESS(env, storedData = null, ctx = null) {
 		closeSocketQuietly(serverSock);
 		setOffline();
 	};
-
 	const pushToChain = (task) => {
 		wsChain = wsChain.then(task).catch(handleWsError);
 	};
-
 	serverSock.addEventListener("message", (event) => {
 		if (wsStopped || wsFailed) return;
 		const size = event.data.byteLength || 0;
@@ -1100,7 +973,6 @@ async function handleVLESS(env, storedData = null, ctx = null) {
 			await processWsMessage(event.data);
 		});
 	});
-
 	serverSock.addEventListener("close", () => {
 		clearInterval(heartbeat);
 		closeSocketQuietly(serverSock);
@@ -1114,24 +986,17 @@ async function handleVLESS(env, storedData = null, ctx = null) {
 			releaseRemoteWriter();
 		});
 	});
-
 	serverSock.addEventListener("error", (err) => {
 		handleWsError(err);
 	});
-
 	return new Response(null, { status: 101, webSocket: clientSock });
 }
-
-// ==========================================================
-// ۸. توابع کمکی موتور VLESS (UTILITIES & HELPERS)
-// ==========================================================
 async function getCfUsage(env) {
 	if (!env.CF_API_TOKEN || !env.CF_ACCOUNT_ID) return { today: 0, total: 0 };
 	try {
 		const now = new Date();
 		const startOfDay = new Date(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()).toISOString();
 		const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
-
 		const q = `query {
       viewer {
         accounts(filter: {accountTag: "${env.CF_ACCOUNT_ID}"}) {
@@ -1144,7 +1009,6 @@ async function getCfUsage(env) {
         }
       }
     }`;
-
 		const res = await fetch("https://api.cloudflare.com/client/v4/graphql", {
 			method: "POST",
 			headers: { Authorization: "Bearer " + env.CF_API_TOKEN, "Content-Type": "application/json" },
@@ -1154,7 +1018,6 @@ async function getCfUsage(env) {
 		const acc = j?.data?.viewer?.accounts?.[0];
 		const todayReqs = acc?.today?.[0]?.sum?.requests || 0;
 		const totalReqs = acc?.total?.[0]?.sum?.requests || todayReqs;
-
 		return { today: todayReqs, total: totalReqs };
 	} catch (e) {
 		return { today: 0, total: 0 };
@@ -1164,12 +1027,10 @@ function isIPv4(value) {
 	const parts = String(value || "").split(".");
 	return parts.length === 4 && parts.every((part) => /^\d{1,3}$/.test(part) && Number(part) >= 0 && Number(part) <= 255);
 }
-
 function stripIPv6Brackets(hostname = "") {
 	const host = String(hostname || "").trim();
 	return host.startsWith("[") && host.endsWith("]") ? host.slice(1, -1) : host;
 }
-
 function isIPHostname(hostname = "") {
 	const host = stripIPv6Brackets(hostname);
 	if (isIPv4(host)) return true;
@@ -1181,14 +1042,12 @@ function isIPHostname(hostname = "") {
 		return false;
 	}
 }
-
 function convertToUint8Array(data) {
 	if (data instanceof Uint8Array) return data;
 	if (data instanceof ArrayBuffer) return new Uint8Array(data);
 	if (ArrayBuffer.isView(data)) return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
 	return new Uint8Array(data || 0);
 }
-
 function concatBytes(...chunkList) {
 	const chunks = chunkList.map(convertToUint8Array);
 	const total = chunks.reduce((sum, c) => sum + c.byteLength, 0);
@@ -1200,7 +1059,6 @@ function concatBytes(...chunkList) {
 	}
 	return result;
 }
-
 function closeSocketQuietly(socket) {
 	try {
 		if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CLOSING) {
@@ -1208,7 +1066,6 @@ function closeSocketQuietly(socket) {
 		}
 	} catch (e) {}
 }
-
 async function dohQuery(domain, recordType) {
 	const cacheKey = `${domain}:${recordType}`;
 	if (DNS_CACHE.has(cacheKey)) {
@@ -1219,7 +1076,6 @@ async function dohQuery(domain, recordType) {
 	try {
 		const typeMap = { A: 1, AAAA: 28 };
 		const qtype = typeMap[recordType.toUpperCase()] || 1;
-
 		const encodeDomain = (name) => {
 			const parts = name.endsWith(".") ? name.slice(0, -1).split(".") : name.split(".");
 			const bufs = [];
@@ -1230,7 +1086,6 @@ async function dohQuery(domain, recordType) {
 			bufs.push(new Uint8Array([0]));
 			return concatBytes(...bufs);
 		};
-
 		const qname = encodeDomain(domain);
 		const query = new Uint8Array(12 + qname.length + 4);
 		const qview = new DataView(query.buffer);
@@ -1240,7 +1095,6 @@ async function dohQuery(domain, recordType) {
 		query.set(qname, 12);
 		qview.setUint16(12 + qname.length, qtype);
 		qview.setUint16(12 + qname.length + 2, 1);
-
 		const response = await fetch(DOH_RESOLVER, {
 			method: "POST",
 			headers: {
@@ -1249,14 +1103,11 @@ async function dohQuery(domain, recordType) {
 			},
 			body: query,
 		});
-
 		if (!response.ok) return [];
-
 		const buf = new Uint8Array(await response.arrayBuffer());
 		const dv = new DataView(buf.buffer);
 		const qdcount = dv.getUint16(4);
 		const ancount = dv.getUint16(6);
-
 		const parseName = (pos) => {
 			const labels = [];
 			let p = pos,
@@ -1281,13 +1132,11 @@ async function dohQuery(domain, recordType) {
 			if (endPos === -1) endPos = p + 1;
 			return [labels.join("."), endPos];
 		};
-
 		let offset = 12;
 		for (let i = 0; i < qdcount; i++) {
 			const [, end] = parseName(offset);
 			offset = Number(end) + 4;
 		}
-
 		const answers = [];
 		for (let i = 0; i < ancount && offset < buf.length; i++) {
 			const [name, nameEnd] = parseName(offset);
@@ -1301,7 +1150,6 @@ async function dohQuery(domain, recordType) {
 			offset += 2;
 			const rdata = buf.slice(offset, offset + rdlen);
 			offset += rdlen;
-
 			let data;
 			if (type === 1 && rdlen === 4) {
 				data = `${rdata[0]}.${rdata[1]}.${rdata[2]}.${rdata[3]}`;
@@ -1322,7 +1170,6 @@ async function dohQuery(domain, recordType) {
 		return [];
 	}
 }
-
 function createUpstreamQueue({ getWriter, releaseWriter, retryConnect, closeConnection, name = "UpstreamQueue" }) {
 	let chunks = [];
 	let head = 0;
@@ -1332,7 +1179,6 @@ function createUpstreamQueue({ getWriter, releaseWriter, retryConnect, closeConn
 	let bundleBuffer = null;
 	let idleResolvers = [];
 	let activeCompletions = null;
-
 	const settleCompletions = (completions, err = null) => {
 		if (!completions) return;
 		for (const comp of completions) {
@@ -1342,28 +1188,24 @@ function createUpstreamQueue({ getWriter, releaseWriter, retryConnect, closeConn
 			}
 		}
 	};
-
 	const rejectQueued = (err) => {
 		for (let i = head; i < chunks.length; i++) {
 			const item = chunks[i];
 			if (item && item.completions) settleCompletions(item.completions, err);
 		}
 	};
-
 	const compact = () => {
 		if (head > 32 && head * 2 >= chunks.length) {
 			chunks = chunks.slice(head);
 			head = 0;
 		}
 	};
-
 	const resolveIdle = () => {
 		if (queuedBytes || draining || !idleResolvers.length) return;
 		const resolvers = idleResolvers;
 		idleResolvers = [];
 		for (const resolve of resolvers) resolve();
 	};
-
 	const clear = (err = null) => {
 		const closeErr = err || (closed ? new Error(`${name}: queue closed`) : null);
 		if (closeErr) {
@@ -1376,7 +1218,6 @@ function createUpstreamQueue({ getWriter, releaseWriter, retryConnect, closeConn
 		queuedBytes = 0;
 		resolveIdle();
 	};
-
 	const shift = () => {
 		if (head >= chunks.length) return null;
 		const item = chunks[head];
@@ -1385,12 +1226,10 @@ function createUpstreamQueue({ getWriter, releaseWriter, retryConnect, closeConn
 		compact();
 		return item;
 	};
-
 	const bundle = () => {
 		const first = shift();
 		if (!first) return null;
 		if (head >= chunks.length || first.chunk.byteLength >= UPSTREAM_BUNDLE_TARGET_BYTES) return first;
-
 		let byteLength = first.chunk.byteLength;
 		let end = head;
 		let allowRetry = first.allowRetry;
@@ -1405,7 +1244,6 @@ function createUpstreamQueue({ getWriter, releaseWriter, retryConnect, closeConn
 			end++;
 		}
 		if (end === head) return first;
-
 		const output = (bundleBuffer ||= new Uint8Array(UPSTREAM_BUNDLE_TARGET_BYTES));
 		output.set(first.chunk);
 		let offset = first.chunk.byteLength;
@@ -1419,7 +1257,6 @@ function createUpstreamQueue({ getWriter, releaseWriter, retryConnect, closeConn
 		compact();
 		return { chunk: output.subarray(0, byteLength), allowRetry, completions };
 	};
-
 	const drain = async () => {
 		if (draining || closed) return;
 		draining = true;
@@ -1463,7 +1300,6 @@ function createUpstreamQueue({ getWriter, releaseWriter, retryConnect, closeConn
 			else resolveIdle();
 		}
 	};
-
 	const enqueue = (data, allowRetry = true, waitForFlush = false) => {
 		if (closed) return false;
 		if (!getWriter()) return false;
@@ -1491,7 +1327,6 @@ function createUpstreamQueue({ getWriter, releaseWriter, retryConnect, closeConn
 		if (!draining) queueMicrotask(drain);
 		return waitForFlush ? completionPromise.then(() => true) : true;
 	};
-
 	return {
 		writeAndAwait(data, allowRetry = true) {
 			return enqueue(data, allowRetry, true);
@@ -1506,7 +1341,6 @@ function createUpstreamQueue({ getWriter, releaseWriter, retryConnect, closeConn
 		},
 	};
 }
-
 function createDownstreamSender(webSocket, headerData = null) {
 	const packetCap = DOWNSTREAM_GRAIN_BYTES;
 	const tailBytes = DOWNSTREAM_GRAIN_TAIL_THRESHOLD;
@@ -1520,12 +1354,10 @@ function createDownstreamSender(webSocket, headerData = null) {
 	let scheduledGeneration = 0;
 	let waitRounds = 0;
 	let flushPromise = null;
-
 	const sendRawChunk = async (chunk) => {
 		if (webSocket.readyState !== WebSocket.OPEN) throw new Error("ws.readyState is not open");
 		webSocket.send(chunk);
 	};
-
 	const attachResponseHeader = (chunk) => {
 		if (!header) return chunk;
 		const merged = new Uint8Array(header.length + chunk.byteLength);
@@ -1534,7 +1366,6 @@ function createDownstreamSender(webSocket, headerData = null) {
 		header = null;
 		return merged;
 	};
-
 	const flush = async () => {
 		while (flushPromise) await flushPromise;
 		if (flushTimer) clearTimeout(flushTimer);
@@ -1550,7 +1381,6 @@ function createDownstreamSender(webSocket, headerData = null) {
 		});
 		return flushPromise;
 	};
-
 	const scheduleFlush = () => {
 		if (flushTimer || microtaskQueued) return;
 		microtaskQueued = true;
@@ -1582,7 +1412,6 @@ function createDownstreamSender(webSocket, headerData = null) {
 			);
 		});
 	};
-
 	return {
 		async sendDirect(data) {
 			let chunk = convertToUint8Array(data);
@@ -1616,7 +1445,6 @@ function createDownstreamSender(webSocket, headerData = null) {
 		flush,
 	};
 }
-
 async function waitForBackpressure(ws) {
 	if (typeof ws.bufferedAmount === "number") {
 		while (ws.bufferedAmount > 256 * 1024) {
@@ -1624,7 +1452,6 @@ async function waitForBackpressure(ws) {
 		}
 	}
 }
-
 async function connectStreams(remoteSocket, webSocket, headerData, retryFunc, onBytes) {
 	let header = headerData,
 		hasData = false,
@@ -1633,14 +1460,12 @@ async function connectStreams(remoteSocket, webSocket, headerData, retryFunc, on
 	const BYOB_LIMIT = 64 * 1024;
 	const downstreamSender = createDownstreamSender(webSocket, header);
 	header = null;
-
 	try {
 		reader = remoteSocket.readable.getReader({ mode: "byob" });
 		useBYOB = true;
 	} catch (e) {
 		reader = remoteSocket.readable.getReader();
 	}
-
 	try {
 		if (!useBYOB) {
 			while (true) {
@@ -1684,7 +1509,6 @@ async function connectStreams(remoteSocket, webSocket, headerData, retryFunc, on
 	}
 	if (!hasData && retryFunc) await retryFunc();
 }
-
 async function buildRaceCandidates(address, port) {
 	if (!PRELOAD_RACE_DIAL || isIPHostname(address)) return null;
 	const [aRecords, aaaaRecords] = await Promise.all([dohQuery(address, "A"), dohQuery(address, "AAAA")]);
@@ -1707,17 +1531,14 @@ async function buildRaceCandidates(address, port) {
 	if (ipList.length === 0) return null;
 	return ipList.map((hostname, attempt) => ({ hostname, port, attempt, resolvedFrom: address }));
 }
-
 async function connectDirect(address, port, initialData = null) {
 	const raceCandidates = await buildRaceCandidates(address, port);
 	const candidates = raceCandidates || Array.from({ length: TCP_CONCURRENCY }, () => ({ hostname: address, port }));
-
 	const openConnection = async (host, prt) => {
 		const socket = connect({ hostname: host, port: prt });
 		await Promise.race([socket.opened, new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 1000))]);
 		return socket;
 	};
-
 	if (candidates.length === 1) {
 		const s = await openConnection(candidates[0].hostname, candidates[0].port);
 		if (initialData && initialData.byteLength > 0) {
@@ -1727,7 +1548,6 @@ async function connectDirect(address, port, initialData = null) {
 		}
 		return s;
 	}
-
 	const attempts = candidates.map((c) => openConnection(c.hostname, c.port).then((socket) => ({ socket, candidate: c })));
 	let winner = null;
 	try {
@@ -1754,7 +1574,6 @@ async function connectDirect(address, port, initialData = null) {
 		}
 	}
 }
-
 async function forwardVlessUDP(udpChunk, webSocket, respHeader, onBytes) {
 	const requestData = convertToUint8Array(udpChunk);
 	try {
@@ -1763,7 +1582,6 @@ async function forwardVlessUDP(udpChunk, webSocket, respHeader, onBytes) {
 		const writer = tcpSocket.writable.getWriter();
 		await writer.write(requestData);
 		writer.releaseLock();
-
 		await tcpSocket.readable.pipeTo(
 			new WritableStream({
 				async write(chunk) {
@@ -1784,7 +1602,6 @@ async function forwardVlessUDP(udpChunk, webSocket, respHeader, onBytes) {
 		);
 	} catch (e) {}
 }
-
 function extractUUIDFromVless(data) {
 	if (data.byteLength < 17) return null;
 	const hex = [...data.slice(1, 17)].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -1797,12 +1614,10 @@ function trackRequest(env, ctx) {
 		GLOBAL_LAST_REQ_WRITE = now;
 		const countToSave = GLOBAL_REQ_COUNT;
 		GLOBAL_REQ_COUNT = 0;
-
 		const task = async () => {
 			try {
 				const today = new Date().toISOString().split("T")[0];
 				await env.DB.prepare("INSERT INTO settings (key, value) VALUES ('req_total', ?) ON CONFLICT(key) DO UPDATE SET value = CAST(value AS INTEGER) + ?").bind(String(countToSave), String(countToSave)).run();
-
 				const lastDateRow = await env.DB.prepare("SELECT value FROM settings WHERE key = 'req_last_date'").first();
 				if (!lastDateRow || lastDateRow.value !== today) {
 					await env.DB.prepare("INSERT INTO settings (key, value) VALUES ('req_last_date', ?) ON CONFLICT(key) DO UPDATE SET value = ?").bind(today, today).run();
@@ -1812,14 +1627,10 @@ function trackRequest(env, ctx) {
 				}
 			} catch (e) {}
 		};
-
 		if (ctx) ctx.waitUntil(task());
 		else task();
 	}
 }
-// ==========================================================
-// ۹. پوسته ها و کدهای رابط کاربری (HTML TEMPLATES)
-// ==========================================================
 const HTML_TEMPLATES = {
 	nginx: `<!DOCTYPE html>
 <html lang="fa" dir="rtl" class="dark">
@@ -1843,27 +1654,21 @@ const HTML_TEMPLATES = {
 </head>
 <body class="bg-gray-50 text-gray-900 dark:bg-amoled-bg dark:text-zinc-100 min-h-screen flex items-center justify-center p-4">
     <div class="w-full max-w-md bg-white dark:bg-amoled-card border border-gray-200 dark:border-amoled-border rounded-2xl shadow-xl p-8 text-center flex flex-col items-center gap-4">
-        
         <div class="p-4 bg-blue-50 dark:bg-blue-900/20 text-blue-500 rounded-full mb-2">
             <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
         </div>
-        
         <h2 class="text-xl font-bold text-gray-900 dark:text-white">ورود به پنل مدیریت</h2>
-        
         <p class="text-sm text-gray-600 dark:text-gray-400 leading-relaxed mt-2">
             برای ورود به پنل، لطفاً عبارت 
             <span class="inline-block px-2 py-1 bg-gray-100 dark:bg-amoled-input border border-gray-200 dark:border-zinc-800 rounded-md font-mono text-blue-500 font-bold mx-1 shadow-sm" dir="ltr">/panel</span> 
             را به انتهای آدرس مرورگر خود اضافه کنید.
         </p>
-        
         <button onclick="window.location.href='/panel'" class="mt-4 w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl text-sm transition-colors duration-200 shadow-lg shadow-blue-600/20 font-bold">
             ورود به پنل
         </button>
-        
     </div>
 </body>
 </html>`,
-
 	setup: `<!DOCTYPE html>
 <html lang="fa" dir="rtl" class="dark">
 <head>
@@ -1888,7 +1693,6 @@ const HTML_TEMPLATES = {
     <div class="w-full max-w-md bg-white dark:bg-amoled-card border border-gray-200 dark:border-amoled-border rounded-2xl shadow-xl p-6">
         <h2 class="text-xl font-bold mb-2 text-center text-blue-600 dark:text-blue-400">تنظیم رمز عبور جدید</h2>
         <p class="text-sm text-gray-500 dark:text-gray-400 text-center mb-6">این اولین ورود شما به پنل مدیریت است. لطفاً رمز عبور خود را تعیین کنید.</p>
-        
         <form onsubmit="handleSetup(event)" class="space-y-4">
             <div>
                 <label class="block text-sm font-medium mb-1.5">رمز عبور</label>
@@ -1901,22 +1705,18 @@ const HTML_TEMPLATES = {
             <button type="submit" id="submit-btn" class="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg text-sm transition font-bold">ثبت و ورود</button>
         </form>
     </div>
-
     <script>
         async function handleSetup(event) {
             event.preventDefault();
             const password = document.getElementById('password').value;
             const confirmPassword = document.getElementById('confirm-password').value;
             const btn = document.getElementById('submit-btn');
-
             if (password !== confirmPassword) {
                 alert('⚠️ رمز عبور و تکرار آن مطابقت ندارند!');
                 return;
             }
-
             btn.disabled = true;
             btn.innerText = 'در حال ثبت...';
-
             try {
                 const res = await fetch('/api/setup-password', {
                     method: 'POST',
@@ -1940,7 +1740,6 @@ const HTML_TEMPLATES = {
     </script>
 </body>
 </html>`,
-
 	login: `<!DOCTYPE html>
 <html lang="fa" dir="rtl" class="dark">
 <head>
@@ -1965,7 +1764,6 @@ const HTML_TEMPLATES = {
     <div class="w-full max-w-md bg-white dark:bg-amoled-card border border-gray-200 dark:border-amoled-border rounded-2xl shadow-xl p-6">
         <h2 class="text-xl font-bold mb-2 text-center text-blue-600 dark:text-blue-400">ورود به پنل مدیریت</h2>
         <p class="text-sm text-gray-500 dark:text-gray-400 text-center mb-6">برای دسترسی به پنل مدیریت، رمز عبور خود را وارد کنید.</p>
-        
         <form onsubmit="handleLogin(event)" class="space-y-4">
             <div>
                 <label class="block text-sm font-medium mb-1.5">رمز عبور</label>
@@ -1974,16 +1772,13 @@ const HTML_TEMPLATES = {
             <button type="submit" id="submit-btn" class="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg text-sm transition font-bold">ورود</button>
         </form>
     </div>
-
     <script>
         async function handleLogin(event) {
             event.preventDefault();
             const password = document.getElementById('password').value;
             const btn = document.getElementById('submit-btn');
-
             btn.disabled = true;
             btn.innerText = 'در حال بررسی...';
-
             try {
                 const res = await fetch('/api/login', {
                     method: 'POST',
@@ -2006,7 +1801,6 @@ const HTML_TEMPLATES = {
     </script>
 </body>
 </html>`,
-
 	panel: `
 <!DOCTYPE html>
 <html lang="fa" dir="rtl">
@@ -2037,7 +1831,6 @@ const HTML_TEMPLATES = {
     </script>
     <style>
         body { font-family: 'Vazirmatn', sans-serif; }
-        
         ::-webkit-scrollbar {
             width: 8px;
             height: 8px;
@@ -2053,7 +1846,6 @@ const HTML_TEMPLATES = {
         ::-webkit-scrollbar-thumb:hover {
             background: #9ca3af;
         }
-
         .dark ::-webkit-scrollbar-track {
             background: #080b0f; 
         }
@@ -2063,7 +1855,6 @@ const HTML_TEMPLATES = {
         .dark ::-webkit-scrollbar-thumb:hover {
             background: #2d3748;
         }
-        
         /* استایل اسکرول‌بار برای مرورگر فایرفاکس */
         * {
             scrollbar-width: thin;
@@ -2075,13 +1866,12 @@ const HTML_TEMPLATES = {
     </style>
 </head>
 <body class="bg-gray-50 text-gray-900 dark:bg-amoled-bg dark:text-zinc-100 min-h-screen transition-colors duration-200">
-
     <header class="border-b border-gray-200 dark:border-amoled-border bg-white dark:bg-amoled-card px-4 py-4">
         <div class="max-w-6xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
             <div class="flex flex-row flex-wrap justify-center items-center gap-3 w-full md:w-auto">
                 <h1 class="text-lg font-bold flex items-center gap-2" dir="ltr">
                     ZEUS Panel 
-                    <span id="panel-version" class="text-xs px-2 py-0.5 font-semibold bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 rounded-full">v1.2.5</span>
+                    <span id="panel-version" class="text-xs px-2 py-0.5 font-semibold bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 rounded-full">v1.4.10</span>
                 </h1>
                 <div class="flex items-center gap-3 bg-gray-100 dark:bg-zinc-800/60 px-3 py-1.5 rounded-full border border-gray-200 dark:border-zinc-800/80 shadow-sm flex-shrink-0 w-fit">
                     <a href="https://github.com/IR-NETLIFY/zeus" target="_blank" rel="noopener noreferrer" class="text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 transition-all transform hover:scale-125 duration-200 flex-shrink-0" title="GitHub">
@@ -2119,19 +1909,16 @@ const HTML_TEMPLATES = {
             </div>
         </div>
     </header>
-
     <main class="max-w-6xl mx-auto px-4 py-8">
 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5 mb-8">
     <div class="bg-white dark:bg-amoled-card border border-gray-200 dark:border-amoled-border rounded-2xl p-5 shadow-sm flex flex-col justify-between hover:shadow-md hover:border-indigo-400 dark:hover:border-indigo-500/50 transition duration-300 relative overflow-hidden group">
         <div class="absolute -right-4 -bottom-4 w-24 h-24 bg-indigo-500/10 rounded-full blur-xl group-hover:scale-150 transition duration-500"></div>
-        
         <div class="flex items-center justify-between relative z-10 mb-2">
             <span class="text-sm font-semibold text-gray-500 dark:text-zinc-400 whitespace-nowrap">تعداد کل کاربران</span>
             <div class="p-2 bg-indigo-50 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400 rounded-xl flex-shrink-0">
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
             </div>
         </div>
-        
         <div class="space-y-1.5 relative z-10 min-w-0 flex-1">
             <div class="text-2xl font-black text-gray-900 dark:text-zinc-100 transition-all" id="stat-total-users">0</div>
             <span class="text-[11px] text-indigo-500 dark:text-indigo-400 flex items-center gap-1 font-medium whitespace-nowrap">
@@ -2140,17 +1927,14 @@ const HTML_TEMPLATES = {
             </span>
         </div>
     </div>
-
     <div class="bg-white dark:bg-amoled-card border border-gray-200 dark:border-amoled-border rounded-2xl p-5 shadow-sm flex flex-col justify-between hover:shadow-md hover:border-emerald-400 dark:hover:border-emerald-500/50 transition duration-300 relative overflow-hidden group">
         <div class="absolute -right-4 -bottom-4 w-24 h-24 bg-emerald-500/10 rounded-full blur-xl group-hover:scale-150 transition duration-500"></div>
-        
         <div class="flex items-center justify-between relative z-10 mb-2">
             <span class="text-sm font-semibold text-gray-500 dark:text-zinc-400 whitespace-nowrap">کاربران فعال (آنلاین)</span>
             <div class="p-2 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400 rounded-xl flex-shrink-0">
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
             </div>
         </div>
-        
         <div class="space-y-1.5 relative z-10 min-w-0 flex-1">
             <div class="text-2xl font-black text-emerald-600 dark:text-emerald-400 transition-all" id="stat-active-users">0</div>
             <span class="text-[11px] text-emerald-500 dark:text-emerald-400 flex items-center gap-1 font-medium whitespace-nowrap">
@@ -2159,17 +1943,14 @@ const HTML_TEMPLATES = {
             </span>
         </div>
     </div>
-
 	<div id="card-cf-requests" class="bg-white dark:bg-amoled-card border border-gray-200 dark:border-amoled-border rounded-2xl p-5 shadow-sm flex flex-col justify-between hover:shadow-md hover:border-orange-400 dark:hover:border-orange-500/50 transition duration-300 relative overflow-hidden group">
 	    <div class="absolute -right-4 -bottom-4 w-24 h-24 bg-orange-500/10 rounded-full blur-xl group-hover:scale-150 transition duration-500"></div>
-	    
 	    <div class="flex items-center justify-between relative z-10 mb-2">
 	        <span class="text-sm font-semibold text-gray-500 dark:text-zinc-400 whitespace-nowrap">ریکوئست‌های روزانه</span>
 	        <div class="p-2 bg-orange-50 dark:bg-orange-950/30 text-orange-600 dark:text-orange-400 rounded-xl flex-shrink-0">
 	            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"></path></svg>
 	        </div>
 	    </div>
-	    
 	    <div class="space-y-2 relative z-10 min-w-0 flex-1">
 	        <div class="flex items-center gap-1">
 	            <span class="text-2xl font-black text-orange-600 dark:text-orange-400 transition-all" id="stat-cf-requests">0</span>
@@ -2185,17 +1966,14 @@ const HTML_TEMPLATES = {
 	        </span>
 	    </div>
 	</div>
-
     <div class="bg-white dark:bg-amoled-card border border-gray-200 dark:border-amoled-border rounded-2xl p-5 shadow-sm flex flex-col justify-between hover:shadow-md hover:border-blue-400 dark:hover:border-blue-500/50 transition duration-300 relative overflow-hidden group">
         <div class="absolute -right-4 -bottom-4 w-24 h-24 bg-blue-500/10 rounded-full blur-xl group-hover:scale-150 transition duration-500"></div>
-        
         <div class="flex items-center justify-between relative z-10 mb-2">
             <span class="text-sm font-semibold text-gray-500 dark:text-zinc-400 whitespace-nowrap">حجم مصرفی (۳۰ روز)</span>
             <div class="p-2 bg-blue-50 dark:bg-blue-950/30 text-blue-600 dark:text-blue-400 rounded-xl flex-shrink-0">
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
             </div>
         </div>
-        
         <div class="space-y-1.5 relative z-10 min-w-0 flex-1">
             <div class="text-2xl font-black text-blue-600 dark:text-blue-400 transition-all whitespace-nowrap" id="stat-total-usage">0 GB</div>
             <span class="text-[11px] text-blue-500 dark:text-blue-400 flex items-center gap-1 font-medium whitespace-nowrap">
@@ -2204,28 +1982,23 @@ const HTML_TEMPLATES = {
             </span>
         </div>
     </div>
-
     <div class="bg-white dark:bg-amoled-card border border-gray-200 dark:border-amoled-border rounded-2xl p-5 shadow-sm flex flex-col justify-between hover:shadow-md hover:border-amber-400 dark:hover:border-amber-500/50 transition duration-300 relative overflow-hidden group">
         <div class="absolute -right-4 -bottom-4 w-24 h-24 bg-amber-500/10 rounded-full blur-xl group-hover:scale-150 transition duration-500"></div>
-        
         <div class="flex items-center justify-between relative z-10 mb-2">
             <span class="text-sm font-semibold text-gray-500 dark:text-zinc-400 whitespace-nowrap">پر مصرف‌ترین کاربر</span>
             <div class="p-2 bg-amber-50 dark:bg-amber-950/30 text-amber-600 dark:text-amber-400 rounded-xl flex-shrink-0">
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
             </div>
         </div>
-        
         <div class="space-y-1.5 relative z-10 min-w-0 flex-1">
             <div class="text-xl font-black text-amber-600 dark:text-amber-400 transition-all truncate max-w-[150px]" id="stat-top-user">-</div>
             <span class="text-[11px] text-amber-500 dark:text-amber-400 flex items-center gap-1 font-medium whitespace-nowrap" id="stat-top-user-usage">۰ GB مصرف شده</span>
         </div>
     </div>
 </div>
-
         <div id="loading-state" class="text-center py-12">
             <span class="text-gray-500 dark:text-gray-400">در حال بارگذاری کاربران...</span>
         </div>
-
         <div class="mb-6 flex flex-col md:flex-row gap-4 justify-between items-center bg-white dark:bg-amoled-card border border-gray-200 dark:border-amoled-border rounded-2xl p-4 shadow-sm">
             <!-- Search Box -->
             <div class="relative w-full md:w-80">
@@ -2255,14 +2028,12 @@ const HTML_TEMPLATES = {
                 </select>
             </div>
         </div>
-
 		<div class="flex items-center justify-between mb-4">
 			<h2 class="text-lg font-bold text-gray-800 dark:text-zinc-200">لیست کاربران</h2>
-			<button onclick="openCreateModal()" class="flex items-center justify-center w-10 h-10 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-full shadow-md hover:shadow-lg hover:scale-110 transition-all duration-300">
-				<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"></path></svg>
+			<button onclick="openCreateModal()" class="p-2 rounded-lg bg-blue-50 dark:bg-blue-900/30 border-2 border-blue-200 dark:border-blue-800/50 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-all duration-300 text-blue-600 dark:text-blue-400 shadow-sm hover:shadow hover:scale-110">
+    			<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"></path></svg>
 			</button>
 		</div>
-        
         <div id="users-table-container" class="hidden overflow-x-auto border border-gray-200 dark:border-amoled-border rounded-xl bg-white dark:bg-amoled-card">
             <table class="w-full text-right border-collapse">
                 <thead>
@@ -2271,9 +2042,9 @@ const HTML_TEMPLATES = {
                         <th class="p-2 border-r border-gray-200 dark:border-zinc-800">لینک ساب</th>
                         <th class="p-2 border-r border-gray-200 dark:border-zinc-800">پروتکل</th>
                         <th class="p-2 border-r border-gray-200 dark:border-zinc-800">پورت</th>
-                        <th class="p-2 border-r border-gray-200 dark:border-zinc-800">وضعیت حجم</th>
-                        <th class="p-2 border-r border-gray-200 dark:border-zinc-800">وضعیت ریکوئست</th>
-                        <th class="p-2 border-r border-gray-200 dark:border-zinc-800">وضعیت زمان</th>
+                        <th class="p-2 border-r border-gray-200 dark:border-zinc-800">حجم</th>
+                        <th class="p-2 border-r border-gray-200 dark:border-zinc-800">ریکوئست</th>
+                        <th class="p-2 border-r border-gray-200 dark:border-zinc-800">زمان</th>
                         <th class="p-2 border-r border-gray-200 dark:border-zinc-800">کاربران آنلاین</th>
                         <th class="p-2 border-r border-gray-200 dark:border-zinc-800">تاریخ ساخت</th>
                     </tr>
@@ -2281,7 +2052,6 @@ const HTML_TEMPLATES = {
                 <tbody id="users-tbody" class="divide-y divide-gray-150 dark:divide-amoled-border text-sm"></tbody>
             </table>
         </div>
-
         <div id="empty-state" class="hidden p-8 border border-dashed border-gray-300 dark:border-amoled-border rounded-2xl text-center">
             <p class="text-gray-500 dark:text-gray-400">کاربری وجود ندارد. برای ساخت اولین کاربر روی دکمه «افزودن کاربر جدید» کلیک کنید.</p>
         </div>
@@ -2325,7 +2095,6 @@ const HTML_TEMPLATES = {
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                 </button>
             </div>
-
             <form id="create-user-form" class="p-6 space-y-5 overflow-y-auto flex-1 overscroll-contain" style="-webkit-overflow-scrolling: touch; transform: translate3d(0,0,0); will-change: scroll-position, transform;" onsubmit="handleFormSubmit(event)">
                 <div class="space-y-4">
                     <div>
@@ -2337,7 +2106,6 @@ const HTML_TEMPLATES = {
                             <input type="text" id="input-name" placeholder="ali" class="w-full pl-3 pr-10 py-2.5 bg-gray-50 dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 text-sm font-semibold text-gray-800 dark:text-zinc-100 placeholder-gray-400/80 transition" required>
                         </div>
                     </div>
-
                     <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
                         <div>
                             <label class="block text-[10px] sm:text-xs font-bold text-gray-500 dark:text-zinc-400 mb-2 uppercase tracking-wider">حجم (GB)</label>
@@ -2377,7 +2145,6 @@ const HTML_TEMPLATES = {
                         </div>
                     </div>
                 </div>
-
                 <div class="pt-2 border-t border-gray-100 dark:border-zinc-900">
                     <label class="block text-xs font-bold text-gray-500 dark:text-zinc-400 mb-3 uppercase tracking-wider">پورت‌های اتصال (انتخاب چندگانه)</label>
                     <div class="space-y-4">
@@ -2390,7 +2157,6 @@ const HTML_TEMPLATES = {
                                 <!-- Filled dynamically -->
                             </div>
                         </div>
-
                         <div class="p-4 bg-gray-50/50 dark:bg-zinc-900/20 border border-gray-200/60 dark:border-zinc-800 rounded-2xl shadow-sm">
                             <div class="flex items-center gap-1.5 mb-3">
                                 <span class="flex h-2 w-2 rounded-full bg-amber-500 shadow-sm"></span>
@@ -2402,7 +2168,6 @@ const HTML_TEMPLATES = {
                         </div>
                     </div>
                 </div>
-
                 <div class="pt-4 border-t border-gray-100 dark:border-zinc-900 space-y-4">
 					<div>
     					<div class="flex items-center justify-between mb-2">
@@ -2411,7 +2176,6 @@ const HTML_TEMPLATES = {
     					</div>
     					<textarea id="input-ips" rows="2" placeholder="104.16.0.1" class="w-full px-3 py-2.5 bg-gray-50 dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 text-xs font-mono text-gray-800 dark:text-zinc-100 placeholder-gray-400/80 transition resize-none"></textarea>
 					</div>
-
                     <div>
                         <label class="block text-xs font-bold text-gray-500 dark:text-zinc-400 mb-2 uppercase tracking-wider">شبیه‌ساز اثر انگشت مرورگر (Fingerprint)</label>
                         <div class="relative">
@@ -2433,7 +2197,6 @@ const HTML_TEMPLATES = {
                         </div>
                     </div>
                 </div>
-
                 <div class="pt-4 flex gap-3">
                     <button type="button" onclick="toggleModal(false)" class="flex-1 py-3 bg-gray-100 hover:bg-gray-200 dark:bg-zinc-800 dark:hover:bg-zinc-700/80 text-gray-700 dark:text-zinc-300 font-bold rounded-xl text-sm transition duration-200">انصراف</button>
                     <button type="submit" id="submit-btn" class="flex-1 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold rounded-xl text-sm transition duration-200 shadow-md shadow-blue-500/10 hover:shadow-lg">ایجاد کاربر</button>
@@ -2472,8 +2235,6 @@ const HTML_TEMPLATES = {
         </div>
     </div>
 </div>
-    
-
     <div id="settings-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm opacity-0 pointer-events-none transition-all duration-300 ease-out">
         <div class="w-full max-w-md bg-white dark:bg-amoled-card border border-gray-200 dark:border-amoled-border rounded-2xl shadow-xl overflow-hidden transition-all transform duration-300 opacity-0 scale-95 ease-out">
             <div class="px-6 py-4 border-b border-gray-150 dark:border-amoled-border flex justify-between items-center bg-gray-50 dark:bg-zinc-900/50">
@@ -2535,13 +2296,11 @@ const HTML_TEMPLATES = {
             <p id="update-modal-text" class="text-sm text-gray-600 dark:text-gray-400 mb-6 leading-relaxed font-medium">
                 نسخه جدید در دسترس است. اگر آپدیت خودکار جواب نداد، حتماً از طریق لینک زیر آپدیت دستی را انجام دهید.
             </p>
-
             <div class="space-y-3">
                 <button onclick="applyUpdate()" class="w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-black rounded-xl text-sm transition duration-300 shadow-lg shadow-blue-500/25 flex items-center justify-center gap-2">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
                     آپدیت خودکار (توصیه شده)
                 </button>
-                
                 <div class="relative py-2">
                     <div class="absolute inset-0 flex items-center">
                         <div class="w-full border-t border-gray-200 dark:border-zinc-800"></div>
@@ -2550,7 +2309,6 @@ const HTML_TEMPLATES = {
                         <span class="bg-white dark:bg-amoled-card px-2 text-gray-400">یا</span>
                     </div>
                 </div>
-
                 <a href="https://zeus-panel.ir-netlify.workers.dev/" target="_blank" class="w-full py-3.5 bg-orange-500 hover:bg-orange-600 dark:bg-orange-600 dark:hover:bg-orange-500 text-white font-bold rounded-xl text-sm transition duration-300 flex items-center justify-center gap-2 border border-orange-400 dark:border-orange-500 shadow-sm">
                     <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
@@ -2558,7 +2316,6 @@ const HTML_TEMPLATES = {
                     آپدیت دستی (رفتن به سایت)
                 </a>
             </div>
-
             <button onclick="toggleUpdateModal(false)" 
                     class="mt-5 w-full py-3.5 bg-red-500 hover:bg-red-600 dark:bg-red-600 dark:hover:bg-red-500 text-white font-bold rounded-xl text-sm transition duration-300 flex items-center justify-center border border-red-400 dark:border-red-500 shadow-sm">
                 انصراف
@@ -2568,17 +2325,13 @@ const HTML_TEMPLATES = {
     <script>
         window.globalFragLen = "20-30";
         window.globalFragInt = "1-2";
-
         const tlsPorts = ['443', '2053', '2083', '2087', '2096', '8443'];
         const nonTlsPorts = ['80', '8080', '8880', '2052', '2082', '2086', '2095'];
-
         let isEditMode = false;
         let editingUsername = '';
-
         function renderPortCheckboxes() {
             const tlsContainer = document.getElementById('tls-ports-list');
             const nonTlsContainer = document.getElementById('nontls-ports-list');
-
             tlsContainer.innerHTML = tlsPorts.map(function(port) {
                 const isCheckedDefault = port === '443' ? 'checked' : '';
                 return '<label class="relative cursor-pointer">' +
@@ -2589,7 +2342,6 @@ const HTML_TEMPLATES = {
                     '</div>' +
                 '</label>';
             }).join('');
-
             nonTlsContainer.innerHTML = nonTlsPorts.map(function(port) {
                 const isCheckedDefault = port === '80' ? 'checked' : '';
                 return '<label class="relative cursor-pointer">' +
@@ -2601,7 +2353,6 @@ const HTML_TEMPLATES = {
                 '</label>';
             }).join('');
         }
-
         // Initialize 443 and 80 active state immediately
         setTimeout(function() {
             const cb443 = document.querySelector('input[name="ports"][value="443"]');
@@ -2609,7 +2360,6 @@ const HTML_TEMPLATES = {
             const cb80 = document.querySelector('input[name="ports"][value="80"]');
             if (cb80) cb80.checked = true;
         }, 100);
-
         function toggleSettingsModal(show) {
             const modal = document.getElementById('settings-modal');
             const card = modal.querySelector('div');
@@ -2625,7 +2375,6 @@ const HTML_TEMPLATES = {
                 card.classList.add('opacity-0', 'scale-95');
             }
         }
-
         function toggleModal(show) {
             const modal = document.getElementById('user-modal');
             const card = document.getElementById('user-modal-card');
@@ -2645,13 +2394,11 @@ const HTML_TEMPLATES = {
                 document.getElementById('submit-btn').innerText = 'ایجاد کاربر';
                 document.getElementById('input-name').disabled = false;
                 document.getElementById('create-user-form').reset();
-                
                 // بازگردانی پورت‌های 443 و 80 به حالت پیش‌فرض
                 const cb443 = document.querySelector('input[name="ports"][value="443"]');
                 if (cb443) cb443.checked = true;
                 const cb80 = document.querySelector('input[name="ports"][value="80"]');
                 if (cb80) cb80.checked = true;
-                
                 // بازگردانی اثر انگشت به iOS
                 const fpSelect = document.getElementById('fingerprint-select');
                 if (fpSelect) fpSelect.value = 'ios';
@@ -2682,26 +2429,21 @@ const HTML_TEMPLATES = {
             document.getElementById('submit-btn').innerText = 'ایجاد کاربر';
             document.getElementById('input-name').disabled = false;
             document.getElementById('create-user-form').reset();
-            
             // اطمینان از اعمال پیش‌فرض‌ها در زمان باز شدن فرم جدید
             const cb443 = document.querySelector('input[name="ports"][value="443"]');
             if (cb443) cb443.checked = true;
             const cb80 = document.querySelector('input[name="ports"][value="80"]');
             if (cb80) cb80.checked = true;
-            
             const fpSelect = document.getElementById('fingerprint-select');
             if (fpSelect) fpSelect.value = 'ios';
-            
             toggleModal(true);
         }
-
         const themeToggleBtn = document.getElementById('theme-toggle');
 		if (localStorage.getItem('color-theme') === 'dark' || (!('color-theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
             document.documentElement.classList.add('dark');
         } else {
             document.documentElement.classList.remove('dark');
         }
-
         themeToggleBtn.addEventListener('click', () => {
             if (document.documentElement.classList.contains('dark')) {
                 document.documentElement.classList.remove('dark');
@@ -2711,18 +2453,15 @@ const HTML_TEMPLATES = {
                 localStorage.setItem('color-theme', 'dark');
             }
         });
-
         async function loadUsers(silent = false) {
             const loadingState = document.getElementById('loading-state');
             const tableContainer = document.getElementById('users-table-container');
             const emptyState = document.getElementById('empty-state');
-            
             if (!silent) {
                 loadingState.classList.remove('hidden');
                 tableContainer.classList.add('hidden');
                 emptyState.classList.add('hidden');
             }
-            
             try {
                 const res = await fetch('/api/users?t=' + Date.now());
                 if (!res.ok) throw new Error();
@@ -2734,25 +2473,21 @@ const HTML_TEMPLATES = {
                 }
             }
         }
-
         function renderUsersUI(data) {
             try {
                 const users = data.users || [];
                 window.allUsers = users;
                 const serverTime = data.serverTime || Date.now();
                 window.lastServerTime = serverTime;
-                
                 const totalUsersCount = users.length;
                 const activeUsersCount = users.filter(u => u.is_online === 1).length;
                 const totalGbUsage = users.reduce((sum, u) => sum + (u.used_gb || 0), 0);
-                
                 document.getElementById('stat-total-users').innerText = totalUsersCount;
                 document.getElementById('stat-active-users').innerText = activeUsersCount;
                 document.getElementById('stat-total-usage').innerText = totalGbUsage < 1 ? (totalGbUsage * 1024).toFixed(0) + ' MB' : totalGbUsage.toFixed(2) + ' GB';
                 const cfRequests = data.cfRequestsToday || 0;
                 const reqCard = document.getElementById('card-cf-requests');
                 const warningBtn = document.getElementById('cf-warning-btn');
-
                 if (cfRequests >= 90000) {
                     if (reqCard) {
                         reqCard.className = "bg-red-50 dark:bg-red-950/20 border border-red-500 rounded-2xl p-5 shadow-[0_0_15px_rgba(239,68,68,0.4)] flex flex-col justify-between hover:shadow-md transition duration-300 relative overflow-hidden group animate-pulse";
@@ -2781,22 +2516,18 @@ const HTML_TEMPLATES = {
                 document.getElementById('stat-top-user').innerText = topUser.username;
                 const topUsage = topUser.used_gb || 0;
                 document.getElementById('stat-top-user-usage').innerText = topUsage < 1 ? (topUsage * 1024).toFixed(0) + ' MB مصرف شده' : topUsage.toFixed(2) + ' GB مصرف شده';
-
                 filterAndRenderUsers();
             } catch (err) {
                 document.getElementById('loading-state').innerHTML = '<span class="text-red-500">خطا در پردازش اطلاعات کاربران</span>';
             }
         }
-
         function filterAndRenderUsers() {
             if (!window.allUsers) return;
             const searchQuery = (document.getElementById('search-input').value || '').toLowerCase().trim();
             const filterStatus = document.getElementById('filter-status').value;
             const sortVal = document.getElementById('sort-users').value;
             const serverTime = window.lastServerTime || Date.now();
-            
             let filtered = [...window.allUsers];
-            
             // Search filter
             if (searchQuery) {
                 filtered = filtered.filter(u => 
@@ -2804,13 +2535,11 @@ const HTML_TEMPLATES = {
                     (u.uuid || '').toLowerCase().includes(searchQuery)
                 );
             }
-            
             // Status filter
             if (filterStatus !== 'all') {
                 filtered = filtered.filter(u => {
                     const isOnline = u.is_online === 1;
                     const isActive = u.is_active === 1;
-                    
                     let isExpired = false;
                     if (u.limit_gb && u.used_gb >= u.limit_gb) isExpired = true;
                     if (u.expiry_days && u.created_at) {
@@ -2818,7 +2547,6 @@ const HTML_TEMPLATES = {
                         const expiryDate = new Date(created.getTime() + (u.expiry_days * 24 * 60 * 60 * 1000));
                         if (new Date(serverTime) > expiryDate) isExpired = true;
                     }
-                    
                     if (filterStatus === 'active') return isActive && !isExpired;
                     if (filterStatus === 'inactive') return !isActive;
                     if (filterStatus === 'online') return isOnline;
@@ -2827,7 +2555,6 @@ const HTML_TEMPLATES = {
                     return true;
                 });
             }
-            
             // Sort
             filtered.sort((a, b) => {
                 if (sortVal === 'newest') {
@@ -2854,16 +2581,13 @@ const HTML_TEMPLATES = {
                 }
                 return 0;
             });
-            
             renderFilteredUsers(filtered, serverTime);
         }
-
         function renderFilteredUsers(users, serverTime) {
             const loadingState = document.getElementById('loading-state');
             const tableContainer = document.getElementById('users-table-container');
             const emptyState = document.getElementById('empty-state');
             const tbody = document.getElementById('users-tbody');
-            
             if (users.length === 0) {
                 loadingState.classList.add('hidden');
                 emptyState.classList.remove('hidden');
@@ -2877,7 +2601,6 @@ const HTML_TEMPLATES = {
                 loadingState.classList.add('hidden');
                 emptyState.classList.add('hidden');
                 tableContainer.classList.remove('hidden');
-                
                 tbody.innerHTML = users.map(user => {
                     const createdDate = user.created_at ? new Date(user.created_at).toLocaleDateString('fa-IR') : '-';
                     let daysRemaining = 'نامحدود';
@@ -2893,10 +2616,8 @@ const HTML_TEMPLATES = {
                             daysRemaining = user.expiry_days;
                         }
                     }
-
                     const usedGb = user.used_gb || 0;
                     const formattedUsed = usedGb < 1 ? (usedGb * 1024).toFixed(0) + ' MB' : usedGb.toFixed(2) + ' GB';
-                    
 					const usedReq = user.used_req || 0;
 					let reqHtml = '';
 					if (user.limit_req) {
@@ -2924,7 +2645,6 @@ const HTML_TEMPLATES = {
 					        '</div>' +
 					    '</div>';
 					}
-					
 					let volumeHtml = '';
 					if (user.limit_gb) {
 					    const limitPercent = Math.min((usedGb / user.limit_gb) * 100, 100);
@@ -2952,7 +2672,6 @@ const HTML_TEMPLATES = {
 					        '</div>' +
 					    '</div>';
 					}
-					
 					let expiryHtml = '';
 					if (user.expiry_days) {
 					    const expiryHue = daysPercent * 1.2;
@@ -2978,7 +2697,6 @@ const HTML_TEMPLATES = {
 					        '</div>' +
 					    '</div>';
 					}
-					
 					const onlineCount = user.online_count || 0;
 					let onlineHtml = '';
 					if (user.max_connections) {
@@ -3013,13 +2731,11 @@ const HTML_TEMPLATES = {
                         if (new Date(serverTime) > expiryDate) isExpired = true;
                     }
                     const isEffectivelyActive = user.is_active !== 0 && !isExpired;
-
                     const statusBtnColor = user.is_active === 0 ? 'text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/30' : 'text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/30';
                     const statusBtnTitle = user.is_active === 0 ? 'فعال کردن کاربر' : 'قطع کردن کاربر';
                     const statusBtnIcon = user.is_active === 0 
                         ? '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>'
                         : '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>';
-
                     return '<tr class="hover:bg-gray-50 dark:hover:bg-zinc-900/40 border-b border-gray-100 dark:border-zinc-800 last:border-0">' +
                             '<td class="p-2 border-r border-gray-100 dark:border-zinc-800 text-center">' +
                                 '<div class="flex flex-col items-center gap-1.5 w-[140px] mx-auto select-none">' +
@@ -3075,11 +2791,9 @@ const HTML_TEMPLATES = {
 async function resetUserData(encodedUsername, actionType) {
             const username = decodeURIComponent(encodedUsername);
             let actionName = '';
-            
             if (actionType === 'volume') actionName = 'حجم';
             else if (actionType === 'req') actionName = 'ریکوئست';
             else if (actionType === 'time') actionName = 'زمان';
-
             if (confirm('آیا از ریست کردن ' + actionName + ' کاربر ' + username + ' مطمئن هستید؟')) {
                 try {
                     const response = await fetch('/api/users/' + encodeURIComponent(username), {
@@ -3122,38 +2836,30 @@ async function resetUserData(encodedUsername, actionType) {
             const submitButton = document.getElementById('submit-btn');
             submitButton.disabled = true;
             submitButton.innerText = isEditMode ? 'در حال ذخیره تغییرات...' : 'در حال ایجاد...';
-
             const username = document.getElementById('input-name').value;
             const limit = document.getElementById('input-limit').value || null;
             const expiry = document.getElementById('input-expiry').value || null;
             const reqLimit = document.getElementById('input-req-limit').value || null;
             const maxConnections = document.getElementById('input-max-connections').value || null;
-            
             const checkedPorts = Array.from(document.querySelectorAll('input[name="ports"]:checked')).map(cb => cb.value);
-            
             if (checkedPorts.length === 0) {
                 alert('⚠️ لطفا حداقل یک پورت را برای اتصال انتخاب کنید!');
                 submitButton.disabled = false;
                 submitButton.innerText = isEditMode ? 'ذخیره تغییرات' : 'ایجاد کاربر';
                 return;
             }
-
             const port = checkedPorts.join(',');
             const tls = checkedPorts.some(p => tlsPorts.includes(p)) ? 'on' : 'off';
-            
             const ips = document.getElementById('input-ips').value;
             const fingerprint = document.getElementById('fingerprint-select').value;
-
             const url = isEditMode ? '/api/users/' + encodeURIComponent(editingUsername) : '/api/users';
             const method = isEditMode ? 'PUT' : 'POST';
-
             try {
                 const response = await fetch(url, {
                     method: method,
                     headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({ username, limit_gb: limit, expiry_days: expiry, limit_req: reqLimit, tls, port, ips, fingerprint, max_connections: maxConnections })
                 });
-                
                 if (response.ok) {
                     toggleModal(false);
                     await loadUsers(true);
@@ -3168,8 +2874,6 @@ async function resetUserData(encodedUsername, actionType) {
                 submitButton.innerText = isEditMode ? 'ذخیره تغییرات' : 'ایجاد کاربر';
             }
         }
-
-        
 function closePathWarning() {
     const modal = document.getElementById('path-warning-modal');
     const card = modal.querySelector('div');
@@ -3201,46 +2905,34 @@ function openUsageWarning() {
             const user = window.allUsers.find(u => u.username === username);
             if (!user) return '';
             const host = window.location.hostname;
-            
             let ips = [host];
             if (user.ips) {
                 const parsedIps = user.ips.split('\\n').map(ip => ip.trim()).filter(ip => ip.length > 0);
                 if (parsedIps.length > 0) ips = parsedIps;
             }
-            
             const ports = String(user.port || '443').split(',').map(p => p.trim()).filter(p => p.length > 0);
             const fp = user.fingerprint || 'chrome';
             const links = [];
-
             const m1 = decodeURIComponent('%E2%9A%A0%EF%B8%8F%D8%A7%DB%8C%D9%86%20%D9%BE%D9%86%D9%84%20%D8%B1%D8%A7%DB%8C%DA%AF%D8%A7%D9%86%20%D9%88%20%D8%BA%DB%8C%D8%B1%20%D9%82%D8%A7%D8%A8%D9%84%20%D9%81%D8%B1%D9%88%D8%B4%20%D8%A7%D8%B3%D8%AA%E2%9A%A0%EF%B8%8F');
             const m2 = decodeURIComponent('%E2%99%A8%EF%B8%8F%20%40IR_NETLIFY%20%D8%B3%D8%A7%D8%AE%D8%AA%20%D8%B1%D8%A7%DB%8C%DA%AF%D8%A7%D9%86%20%E2%99%A8%EF%B8%8F');
-
             links.push('vle' + 'ss://' + (user.uuid || '') + '@0.0.0.0:1?encryption=none&security=none&type=ws&host=' + host + '&path=%2FIn_Panel_Rayeghan_Ast_Va_Gheyre_Ghabele_Foroosh#' + encodeURIComponent(m1));
             links.push('vle' + 'ss://' + (user.uuid || '') + '@0.0.0.0:1?encryption=none&security=none&type=ws&host=' + host + '&path=%2FIn_Panel_Rayeghan_Ast_Va_Gheyre_Ghabele_Foroosh#' + encodeURIComponent(m2));
-
             ips.forEach((ip) => {
                 ports.forEach((portStr) => {
                     const isTlsPort = tlsPorts.includes(portStr);
                     const tlsVal = isTlsPort ? 'tls' : 'none';
                     const remark = user.username + ' | ' + ip + ' | ' + portStr;
-                    
                     links.push('vle' + 'ss://' + (user.uuid || '') + '@' + ip + ':' + portStr + '?path=%2FIn_Panel_Rayeghan_Ast_Va_Gheyre_Ghabele_Foroosh&security=' + tlsVal + '&encryption=none&insecure=0&host=' + host + '&fp=' + fp + '&type=ws&allowInsecure=0&sni=' + host + '#' + encodeURIComponent(remark));
                 });
             });
-
             return links.join('\\n');
         }
-
         function getSubLink(username) {
             return window.location.origin + '/feed/' + encodeURIComponent(username);
         }
-
-
-
         function getStatusLink(username) {
             return window.location.origin + '/status/' + encodeURIComponent(username);
         }
-
         function copySubLink(encodedUsername) {
             const username = decodeURIComponent(encodedUsername);
             navigator.clipboard.writeText(getSubLink(username)).then(() => {
@@ -3249,7 +2941,6 @@ function openUsageWarning() {
                 alert('خطا در کپی کردن لینک ساب!');
             });
         }
-
         function copyStatusLink(encodedUsername) {
             const username = decodeURIComponent(encodedUsername);
             navigator.clipboard.writeText(getStatusLink(username)).then(() => {
@@ -3258,10 +2949,6 @@ function openUsageWarning() {
                 alert('خطا در کپی کردن لینک صفحه وضعیت!');
             });
         }
-
-
-
-
         function copyConfig(encodedUsername) {
             const username = decodeURIComponent(encodedUsername);
             const link = getVlessLink(username);
@@ -3272,9 +2959,6 @@ function openUsageWarning() {
                 alert('خطا در کپی کردن کانفیگ!');
             });
         }
-
-     
-
 function editUser(encodedUsername) {
     const username = decodeURIComponent(encodedUsername);
     const user = window.allUsers.find(u => u.username === username);
@@ -3282,34 +2966,25 @@ function editUser(encodedUsername) {
         alert('کاربر یافت نشد!');
         return;
     }
-
     isEditMode = true;
     editingUsername = username;
-
     document.getElementById('modal-title').innerText = 'ویرایش کاربر: ' + username;
     document.getElementById('submit-btn').innerText = 'ذخیره تغییرات';
-
     const nameInput = document.getElementById('input-name');
     nameInput.value = username;
     nameInput.disabled = false;
-
     document.getElementById('input-limit').value = user.limit_gb || '';
     document.getElementById('input-expiry').value = user.expiry_days || '';
     document.getElementById('input-req-limit').value = user.limit_req || '';
     document.getElementById('input-max-connections').value = user.max_connections || '';
-    
     document.getElementById('input-ips').value = user.ips || '';
-
     document.getElementById('fingerprint-select').value = user.fingerprint || 'chrome';
-
     const userPorts = String(user.port || '').split(',').map(p => p.trim());
     document.querySelectorAll('input[name="ports"]').forEach(cb => {
         cb.checked = userPorts.includes(cb.value);
     });
-
     toggleModal(true);
 }
-
         async function deleteUser(encodedUsername) {
             const username = decodeURIComponent(encodedUsername);
             if (confirm('آیا از حذف کاربر ' + username + ' مطمئن هستید؟')) {
@@ -3327,7 +3002,6 @@ function editUser(encodedUsername) {
                 }
             }
         }
-
         function getFlagEmoji(countryCode) {
             if (!countryCode) return '🌐';
             const codePoints = countryCode.toUpperCase().split('').map(char => 127397 + char.charCodeAt(0));
@@ -3337,11 +3011,9 @@ function editUser(encodedUsername) {
                 return '🌐';
             }
         }
-
         function renderLocationsUI(locations, activeIata) {
             const select = document.getElementById('location-select');
             locations.sort((a, b) => (a.cca2 || '').localeCompare(b.cca2 || ''));
-
             let html = '<option value="">🌐 پیش‌فرض (لوکیشن خودکار)</option>';
             locations.forEach(loc => {
                 if (loc.iata && loc.city) {
@@ -3352,13 +3024,11 @@ function editUser(encodedUsername) {
             });
             select.innerHTML = html;
         }
-
         async function loadLocations() {
             const select = document.getElementById('location-select');
             const cachedLocations = localStorage.getItem('cached_locations_list');
             const cachedActiveIata = localStorage.getItem('cached_active_iata') || '';
             let hasCachedLocs = false;
-            
             if (cachedLocations) {
                 try {
                     const parsedLocs = JSON.parse(cachedLocations);
@@ -3368,7 +3038,6 @@ function editUser(encodedUsername) {
                     }
                 } catch(e) {}
             }
-            
             try {
                 const statusRes = await fetch('/api/proxy-ip');
                 let activeIata = '';
@@ -3376,7 +3045,6 @@ function editUser(encodedUsername) {
                     const statusData = await statusRes.json();
                     activeIata = statusData.iata || '';
                     localStorage.setItem('cached_active_iata', activeIata);
-                    
                     if(statusData.frag_len) {
                         window.globalFragLen = statusData.frag_len;
                         document.getElementById('frag-length').value = statusData.frag_len;
@@ -3386,11 +3054,9 @@ function editUser(encodedUsername) {
                         document.getElementById('frag-interval').value = statusData.frag_int;
                     }
                 }
-
                 const res = await fetch('/locations');
                 if (!res.ok) throw new Error();
                 const locations = await res.json();
-                
                 localStorage.setItem('cached_locations_list', JSON.stringify(locations));
                 renderLocationsUI(locations, activeIata);
             } catch (err) {
@@ -3399,17 +3065,14 @@ function editUser(encodedUsername) {
                 }
             }
         }
-
         async function saveSettings() {
             const select = document.getElementById('location-select');
             const fragLen = document.getElementById('frag-length').value || "20-30";
             const fragInt = document.getElementById('frag-interval').value || "1-2";
             const iata = select.value;
             const btn = document.getElementById('save-settings-btn');
-            
             btn.disabled = true;
             btn.innerText = 'در حال ذخیره...';
-            
             try {
                 let resolvedIp = 'proxyip.cmliussss.net';
                 if (iata) {
@@ -3428,13 +3091,11 @@ function editUser(encodedUsername) {
                         }
                     }
                 }
-
                 const response = await fetch('/api/proxy-ip', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ proxy_ip: resolvedIp, iata: iata ? iata.toUpperCase() : '', frag_len: fragLen, frag_int: fragInt })
                 });
-
                 if (response.ok) {
                     window.globalFragLen = fragLen;
                     window.globalFragInt = fragInt;
@@ -3450,12 +3111,10 @@ function editUser(encodedUsername) {
                 btn.innerText = 'ذخیره تنظیمات';
             }
         }
-
         async function changeAdminPassword() {
             const currentPwd = document.getElementById('change-pwd-current').value;
             const newPwd = document.getElementById('change-pwd-new').value;
             const btn = document.getElementById('change-pwd-btn');
-            
             if (!currentPwd || !newPwd) {
                 alert('⚠️ وارد کردن رمز عبور فعلی و جدید الزامی است!');
                 return;
@@ -3464,17 +3123,14 @@ function editUser(encodedUsername) {
                 alert('⚠️ رمز عبور جدید باید حداقل ۴ کاراکتر باشد!');
                 return;
             }
-            
             btn.disabled = true;
             btn.innerText = 'در حال تغییر...';
-            
             try {
                 const response = await fetch('/api/change-password', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ current_password: currentPwd, new_password: newPwd })
                 });
-                
                 const data = await response.json();
                 if (response.ok && data.success) {
                     alert('✅ رمز عبور با موفقیت تغییر کرد.');
@@ -3491,7 +3147,6 @@ function editUser(encodedUsername) {
                 btn.innerText = 'تغییر رمز عبور';
             }
         }
-
         async function logoutAdmin() {
             if (confirm('⚠️ آیا می‌خواهید از پنل خارج شوید؟')) {
                 try {
@@ -3500,9 +3155,8 @@ function editUser(encodedUsername) {
                 window.location.reload();
             }
         }
-const CURRENT_VERSION = '1.4.9';
+const CURRENT_VERSION = '1.4.10';
 const UPDATE_FIX = "constsCURRENT_VERSION='d.d.d'";
-
 		async function checkForUpdates(isManual = false) {
             try {
                 if (isManual) {
@@ -3520,7 +3174,6 @@ const UPDATE_FIX = "constsCURRENT_VERSION='d.d.d'";
                     document.getElementById('update-toggle').className = "p-2 rounded-lg bg-red-100 dark:bg-red-900/60 border border-red-500 hover:bg-red-200 dark:hover:bg-red-900/80 transition text-red-700 dark:text-red-400 shadow-[0_0_15px_rgba(239,68,68,0.6)] animate-pulse relative";
                     const badge = document.getElementById('update-badge');
                     if (badge) badge.remove();
-                    
                     if (isManual) {
                         // باز کردن پنجره اختصاصی آپدیت به جای alert معمولی
                         toggleUpdateModal(true, latestVersion);
@@ -3537,19 +3190,15 @@ const UPDATE_FIX = "constsCURRENT_VERSION='d.d.d'";
                 }
             }
         }
-
         async function applyUpdate() {
             // بستن پنجره آپدیت قبل از شروع عملیات
             toggleUpdateModal(false);
-            
             const btn = document.getElementById('update-toggle');
             btn.disabled = true;
             alert('در حال دریافت و اعمال آپدیت... لطفاً چند ثانیه صبر کنید.');
-            
             try {
                 const res = await fetch('/api/update-panel', { method: 'POST' });
                 const data = await res.json();
-                
                 if (res.ok && data.success) {
                     alert('پنل با موفقیت به آخرین نسخه آپدیت شد! در حال راه‌اندازی مجدد پنل (لطفاً ۵ ثانیه صبر کنید)...');
                     setTimeout(() => {
@@ -3565,23 +3214,18 @@ const UPDATE_FIX = "constsCURRENT_VERSION='d.d.d'";
             }
         }
 let cachedIpsData = {};
-
 async function fetchIpsList() {
     try {
         const response = await fetch('https://raw.githubusercontent.com/IR-NETLIFY/zeus/refs/heads/main/ips.txt');
         if (!response.ok) throw new Error('Fetch failed');
         const text = await response.text();
-        
         const blocks = text.split('----------');
         cachedIpsData = {};
-        
         blocks.forEach(block => {
             const lines = block.trim().split('\\n').map(l => l.trim()).filter(l => l.length > 0);
             if (lines.length === 0) return;
-            
             let opName = "Unknown";
             const ips = [];
-            
             lines.forEach(line => {
                 if (line.includes('#')) {
                     opName = line.split('#')[1].trim();
@@ -3589,23 +3233,19 @@ async function fetchIpsList() {
                     ips.push(line);
                 }
             });
-            
             if (ips.length > 0) {
                 cachedIpsData[opName] = ips;
             }
         });
-        
         populateIpSelect();
     } catch (err) {
         alert('Failed to load IP list from GitHub.');
         toggleIpSelectorModal(false);
     }
 }
-
 function populateIpSelect() {
     const select = document.getElementById('ip-operator-select');
     select.innerHTML = '<option value="all">All</option>';
-    
     Object.keys(cachedIpsData).forEach(op => {
         const option = document.createElement('option');
         option.value = op;
@@ -3613,7 +3253,6 @@ function populateIpSelect() {
         select.appendChild(option);
     });
 }
-
 function toggleIpSelectorModal(show) {
     const modal = document.getElementById('ip-selector-modal');
     const card = modal.querySelector('div');
@@ -3629,23 +3268,18 @@ function toggleIpSelectorModal(show) {
         card.classList.add('opacity-0', 'scale-95');
     }
 }
-
 async function openIpSelectorModal() {
     toggleIpSelectorModal(true);
     document.getElementById('ip-loading-state').classList.remove('hidden');
     document.getElementById('ip-selection-form').classList.add('hidden');
-    
     await fetchIpsList();
-    
     document.getElementById('ip-loading-state').classList.add('hidden');
     document.getElementById('ip-selection-form').classList.remove('hidden');
 }
-
 function applySelectedIps() {
     const operator = document.getElementById('ip-operator-select').value;
     let count = parseInt(document.getElementById('ip-count-input').value, 10);
     if (isNaN(count) || count < 1) count = 10;
-    
     let availableIps = [];
     if (operator === 'all') {
         Object.values(cachedIpsData).forEach(ips => {
@@ -3654,9 +3288,7 @@ function applySelectedIps() {
     } else {
         availableIps = cachedIpsData[operator] || [];
     }
-    
     availableIps = [...new Set(availableIps)];
-    
     let selectedIps = [];
     if (count >= availableIps.length) {
         selectedIps = availableIps;
@@ -3668,7 +3300,6 @@ function applySelectedIps() {
         }
         selectedIps = shuffled.slice(0, count);
     }
-    
     document.getElementById('input-ips').value = selectedIps.join('\\n');
     toggleIpSelectorModal(false);
 }
@@ -3683,18 +3314,15 @@ document.addEventListener('DOMContentLoaded', () => {
         }			
             const versionBadge = document.getElementById('panel-version');
             if (versionBadge) versionBadge.innerText = 'v' + CURRENT_VERSION;
-
             renderPortCheckboxes();
             loadUsers();
             loadLocations();
             setInterval(() => loadUsers(true), 2000);
             setTimeout(() => checkForUpdates(false), 2000);
         });
-
     </script>
 </body>
 </html>`,
-
 	status: `<!DOCTYPE html>
 <html lang="fa" dir="rtl" class="dark">
 <head>
@@ -3730,7 +3358,6 @@ document.addEventListener('DOMContentLoaded', () => {
         <!-- Background Orbs -->
         <div class="absolute -left-12 -top-12 w-40 h-40 bg-blue-500/10 rounded-full blur-3xl pointer-events-none"></div>
         <div class="absolute -right-12 -bottom-12 w-40 h-40 bg-purple-500/10 rounded-full blur-3xl pointer-events-none"></div>
-
         <div class="text-center mb-8 relative z-10">
             <div class="inline-block p-3.5 bg-blue-600/10 text-blue-500 rounded-3xl mb-3 border border-blue-500/20 shadow-lg shadow-blue-500/5">
                 <svg class="w-9 h-9" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
@@ -3742,12 +3369,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 <span id="live-connections-text" dir="rtl">۰ دستگاه متصل</span>
             </div>
         </div>
-
         <!-- Connection Status -->
         <div id="status-card" class="mb-6 rounded-2xl p-4 text-center border font-bold relative z-10 transition duration-300">
             <span id="status-text" class="text-sm">در حال بارگذاری وضعیت...</span>
         </div>
-
         <!-- Progress Cards -->
         <div class="space-y-5 mb-8 relative z-10">
             <!-- Traffic usage card -->
@@ -3767,7 +3392,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     <span>حجم کل: <span id="limit-vol" class="font-bold text-gray-800 dark:text-zinc-200">-</span></span>
                 </div>
             </div>
-
             <!-- Expiry card -->
             <div class="bg-white/40 dark:bg-zinc-900/30 border border-gray-200 dark:border-amoled-border rounded-2xl p-5 shadow-sm">
                 <div class="flex justify-between items-center mb-3">
@@ -3785,7 +3409,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     <span>کل اعتبار: <span id="total-days" class="font-bold text-gray-800 dark:text-zinc-200">-</span></span>
                 </div>
             </div>
-
             <div class="bg-white/40 dark:bg-zinc-900/30 border border-gray-200 dark:border-amoled-border rounded-2xl p-5 shadow-sm">
                 <div class="flex justify-between items-center mb-3">
                     <span class="text-xs font-semibold text-gray-500 dark:text-zinc-400 flex items-center gap-1.5">
@@ -3802,7 +3425,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     <span>سقف کل: <span id="limit-req" class="font-bold text-gray-800 dark:text-zinc-200">-</span></span>
                 </div>
             </div>
-
             <div class="bg-white/40 dark:bg-zinc-900/30 border border-gray-200 dark:border-amoled-border rounded-2xl p-5 shadow-sm">
                 <div class="flex justify-between items-center mb-3">
                     <span class="text-xs font-semibold text-gray-500 dark:text-zinc-400 flex items-center gap-1.5">
@@ -3820,7 +3442,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             </div>
         </div>
-
         <!-- Configurations Card -->
         <div class="border-t border-gray-100 dark:border-zinc-800 pt-6 relative z-10">
             <h2 class="text-sm font-bold mb-4 flex items-center gap-2">
@@ -3849,17 +3470,11 @@ document.addEventListener('DOMContentLoaded', () => {
         @IR_NETLIFY
     </a>
 </div>
-
-
     <script>
         /* {{USER_DATA_PLACEHOLDER}} */
-        
-        
-
         function getHost() {
             return window.location.host;
         }
-
         function getVlessLink() {
             const u = window.statusUser;
             const host = getHost();
@@ -3881,25 +3496,17 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             return links.join('\\n');
         }
-
         function copyVlessConfig() {
             navigator.clipboard.writeText(getVlessLink()).then(() => alert('✅ کانفیگ VLESS با موفقیت کپی شد!'));
         }
-
-
-
         function copyTextSub() {
             const link = window.location.protocol + '//' + getHost() + '/sub/' + encodeURIComponent(window.statusUser.username);
             navigator.clipboard.writeText(link).then(() => alert('✅ لینک ساب متنی کپی شد!'));
         }
-
-
         document.addEventListener('DOMContentLoaded', () => {
             const u = window.statusUser;
             if (!u) return;
-
             document.getElementById('display-username').innerText = u.username;
-
             const badge = document.getElementById('live-connections-badge');
             badge.classList.remove('hidden');
             if (u.online_count && u.online_count > 0) {
@@ -3911,24 +3518,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 badge.className = 'inline-flex items-center gap-1.5 px-3 py-1 bg-gray-500/10 border border-gray-500/20 text-gray-500 dark:text-zinc-400 rounded-full text-xs font-bold shadow-sm';
                 badge.querySelector('span.w-2').className = 'w-2 h-2 rounded-full bg-gray-500';
             }
-
             // Compute volume
             const usedGb = u.used_gb || 0;
             const limitGb = u.limit_gb;
             const formattedUsed = usedGb < 1 ? (usedGb * 1024).toFixed(0) + ' MB' : usedGb.toFixed(2) + ' GB';
             document.getElementById('used-vol').innerText = formattedUsed;
-            
             let isVolumeExpired = false;
             if (limitGb) {
                 document.getElementById('limit-vol').innerText = limitGb + ' GB';
                 const pct = Math.min((usedGb / limitGb) * 100, 100);
                 document.getElementById('volume-pct').innerText = pct.toFixed(0) + '٪';
                 document.getElementById('volume-progress').style.width = pct + '%';
-                
                 // Color bar
                 const hue = 120 - (pct * 1.2);
                 document.getElementById('volume-progress').style.backgroundColor = 'hsl(' + hue + ', 80%, 45%)';
-                
                 if (usedGb >= limitGb) isVolumeExpired = true;
             } else {
                 document.getElementById('limit-vol').innerText = 'نامحدود';
@@ -3936,12 +3539,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.getElementById('volume-progress').style.width = '100%';
                 document.getElementById('volume-progress').style.backgroundColor = '#2dd4bf';
             }
-
             // Compute Expiry
             let daysRemaining = 'نامحدود';
             let totalDays = 'نامحدود';
             let isTimeExpired = false;
-            
             if (u.expiry_days) {
                 totalDays = u.expiry_days + ' روز';
                 if (u.created_at) {
@@ -3949,14 +3550,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     const expiryDate = new Date(created.getTime() + (u.expiry_days * 24 * 60 * 60 * 1000));
                     const diffDays = Math.ceil((expiryDate - new Date()) / (1000 * 60 * 60 * 24));
                     daysRemaining = diffDays > 0 ? diffDays : 0;
-                    
                     const pct = Math.max(0, Math.min(100, (daysRemaining / u.expiry_days) * 100));
                     document.getElementById('expiry-pct').innerText = pct.toFixed(0) + '٪';
                     document.getElementById('expiry-progress').style.width = pct + '%';
-                    
                     const hue = pct * 1.2;
                     document.getElementById('expiry-progress').style.backgroundColor = 'hsl(' + hue + ', 80%, 45%)';
-                    
                     if (new Date() > expiryDate) isTimeExpired = true;
                 }
             } else {
@@ -3964,24 +3562,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.getElementById('expiry-progress').style.width = '100%';
                 document.getElementById('expiry-progress').style.backgroundColor = '#14b8a6';
             }
-            
             document.getElementById('days-remaining').innerText = daysRemaining === 'نامحدود' ? 'نامحدود' : daysRemaining + ' روز';
             document.getElementById('total-days').innerText = totalDays;
-
             const usedReq = u.used_req || 0;
             const limitReq = u.limit_req;
             document.getElementById('used-req').innerText = usedReq.toLocaleString();
-            
             let isReqExpired = false;
             if (limitReq) {
                 document.getElementById('limit-req').innerText = limitReq.toLocaleString();
                 const rPct = Math.min((usedReq / limitReq) * 100, 100);
                 document.getElementById('req-pct').innerText = rPct.toFixed(0) + '٪';
                 document.getElementById('req-progress').style.width = rPct + '%';
-                
                 const rHue = 120 - (rPct * 1.2);
                 document.getElementById('req-progress').style.backgroundColor = 'hsl(' + rHue + ', 80%, 45%)';
-                
                 if (usedReq >= limitReq) isReqExpired = true;
             } else {
                 document.getElementById('limit-req').innerText = 'نامحدود';
@@ -3989,17 +3582,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.getElementById('req-progress').style.width = '100%';
                 document.getElementById('req-progress').style.backgroundColor = '#10b981';
             }
-
             const onlineCount = u.online_count || 0;
             const maxConns = u.max_connections;
             document.getElementById('online-count').innerText = onlineCount;
-            
             if (maxConns) {
                 document.getElementById('limit-online').innerText = maxConns;
                 const oPct = Math.min((onlineCount / maxConns) * 100, 100);
                 document.getElementById('online-pct').innerText = oPct.toFixed(0) + '٪';
                 document.getElementById('online-progress').style.width = oPct + '%';
-                
                 const oHue = 120 - (oPct * 1.2);
                 document.getElementById('online-progress').style.backgroundColor = 'hsl(' + oHue + ', 80%, 45%)';
             } else {
@@ -4008,10 +3598,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.getElementById('online-progress').style.width = '100%';
                 document.getElementById('online-progress').style.backgroundColor = onlineCount > 0 ? '#0ea5e9' : '#9ca3af'; 
             }
-
             const statusCard = document.getElementById('status-card');
             const statusText = document.getElementById('status-text');
-            
             if (u.is_active === 0) {
                 statusCard.className = 'mb-6 rounded-2xl p-4 text-center border font-bold relative z-10 bg-red-500/10 border-red-500/30 text-red-500 shadow-md shadow-red-500/5';
                 statusCard.style.boxShadow = 'inset 0 0 12px rgba(239, 68, 68, 0.1)';
@@ -4032,7 +3620,5 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     </script>
 </body>
-
-
 </html>`,
 };
