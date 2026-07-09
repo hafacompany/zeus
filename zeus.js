@@ -1344,15 +1344,6 @@ async function handleVLESS(env, storedData = null, ctx = null, request = null) {
 					return;
 				}
 				
-				if (cmd === 2) {
-					if (port === 53) {
-						isDnsQuery = true;
-						await forwardVlessUDP(rawData, serverSock, respHeader, addBytes, targetDns);
-					} else {
-						serverSock.close();
-					}
-					return;
-				}
 				const connectTCP = async (dataPayload = null, useFallback = true) => {
 					if (remoteConnWrapper.connectingPromise) {
 						await remoteConnWrapper.connectingPromise;
@@ -2709,10 +2700,10 @@ const HTML_TEMPLATES = {
             scrollbar-color: #1c2330 #080b0f;
         }
         @media (min-width: 769px) {
-            header, main { zoom: 1.20; }
+            header, main { zoom: 1.18; }
         }
         @media (max-width: 768px) {
-            header, main { zoom: 0.70; }
+            header, main { zoom: 0.80; }
         }
     </style>
 </head>
@@ -2991,6 +2982,19 @@ const HTML_TEMPLATES = {
         </button>
     </div>
 </div>
+<div id="global-message-modal" class="fixed inset-0 z-[86] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm opacity-0 pointer-events-none transition-all duration-300 ease-out">
+    <div class="w-full max-w-md bg-white dark:bg-amoled-card border border-blue-500/50 rounded-3xl shadow-2xl overflow-hidden p-6 text-center transition-all transform duration-300 opacity-0 scale-95 ease-out">
+        <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-500 mb-4 shadow-inner">
+            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+        </div>
+        <h3 class="font-black text-xl text-gray-900 dark:text-white mb-4">پیام سیستم</h3>
+        <div id="global-message-content" class="mb-6 w-full text-center">
+        </div>
+        <button id="global-message-close-btn" class="w-full py-3.5 bg-transparent border-2 border-blue-600 text-blue-700 hover:bg-blue-900/20 hover:text-blue-800 dark:border-blue-500 dark:text-blue-500 dark:hover:bg-blue-900/40 dark:hover:text-blue-400 font-black rounded-xl text-sm transition duration-300 shadow-lg">
+            متوجه شدم
+        </button>
+    </div>
+</div>
     <div id="user-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 opacity-0 pointer-events-none transition-opacity duration-200 ease-out">
         <div id="user-modal-card" class="w-full max-w-xl bg-white dark:bg-zinc-950 border border-gray-200 dark:border-zinc-800 rounded-2xl shadow-xl overflow-hidden transition-[opacity,transform] duration-200 opacity-0 scale-95 ease-out flex flex-col max-h-[90vh] transform-gpu" style="will-change: transform, opacity;">
             <div class="px-6 py-4 border-b border-gray-150 dark:border-zinc-800/80 flex justify-between items-center bg-gray-50/50 dark:bg-zinc-900/30">
@@ -3146,22 +3150,8 @@ const HTML_TEMPLATES = {
     					<textarea id="input-ips" rows="2" placeholder="104.16.0.1" class="w-full px-3 py-2.5 bg-gray-50 dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 text-xs font-mono text-gray-800 dark:text-zinc-100 placeholder-gray-400/80 transition resize-none"></textarea>
 					</div>
                     <div class="mt-4 pt-4 border-t border-gray-150 dark:border-zinc-900 space-y-4">
-                        <div id="user-cf-proxy-section" class="transition-opacity duration-300">
-                            <label class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-zinc-300">ثابت کردن کشور (Cloudflare)</label>
-                            <div class="mb-2">
-                                <input type="text" id="user-location-search" oninput="filterUserLocations()" placeholder="جستجوی شهر، کشور یا IATA" class="w-full px-3 py-2 bg-gray-50 dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-lg shadow-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-700 dark:text-zinc-200 transition">
-                            </div>
-                            <div class="relative">
-                                <select id="user-location-select" class="w-full pl-8 pr-3 py-2.5 bg-gray-50 dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-lg shadow-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-700 dark:text-zinc-200 cursor-pointer appearance-none">
-                                    <option value="">بدون لوکیشن (پیش‌فرض)</option>
-                                </select>
-                                <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-gray-500 dark:text-zinc-400">
-                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
-                                </div>
-                            </div>
-                        </div>
                         
-                        <div class="pt-4 border-t-2 border-gray-200 dark:border-zinc-800">
+                        <div>
                             <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4 border-b border-gray-100 dark:border-zinc-800/30 pb-3">
 	                            <div class="flex items-center gap-2 min-w-0">
 	                            	<label class="relative inline-flex items-center cursor-pointer select-none flex-shrink-0">
@@ -3190,10 +3180,22 @@ const HTML_TEMPLATES = {
 								</div>
                             </div>
                         </div>
-                    </div>
-                    
-                    
-						
+
+                        <div id="user-cf-proxy-section" class="transition-opacity duration-300 pt-4 border-t-2 border-gray-200 dark:border-zinc-800">
+                            <label class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-zinc-300">ثابت کردن کشور (Cloudflare)</label>
+                            <div class="mb-2">
+                                <input type="text" id="user-location-search" oninput="filterUserLocations()" placeholder="جستجوی شهر، کشور یا IATA" class="w-full px-3 py-2 bg-gray-50 dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-lg shadow-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-700 dark:text-zinc-200 transition">
+                            </div>
+                            <div class="relative">
+                                <select id="user-location-select" class="w-full pl-8 pr-3 py-2.5 bg-gray-50 dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-lg shadow-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-700 dark:text-zinc-200 cursor-pointer appearance-none">
+                                    <option value="">بدون لوکیشن (پیش‌فرض)</option>
+                                </select>
+                                <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-gray-500 dark:text-zinc-400">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                                </div>
+                            </div>
+                        </div>
+					</div>
                 </div>
                 <div class="pt-4 flex gap-3">
                     <button type="button" onclick="toggleModal(false)" class="flex-1 py-3 bg-transparent border-2 border-rose-700 text-rose-700 hover:bg-rose-900/20 hover:text-rose-800 dark:border-rose-700 dark:text-rose-500 dark:hover:bg-rose-900/40 dark:hover:text-rose-400 font-bold rounded-xl text-sm transition duration-200 shadow-sm">انصراف</button>
@@ -3309,7 +3311,7 @@ const HTML_TEMPLATES = {
             </p>
             
             <div>
-                <input type="text" id="donate-proxy-input" placeholder="socks5:// یا http:// یا (user:pass@ip:port)" dir="ltr" class="w-full px-3 py-2.5 bg-gray-50 dark:bg-amoled-input border border-gray-300 dark:border-amoled-border rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 text-xs font-mono text-left text-gray-900 dark:text-zinc-100 transition">
+                <input type="text" id="donate-proxy-input" placeholder="user:pass@ip:port" dir="ltr" class="w-full px-3 py-2.5 bg-gray-50 dark:bg-amoled-input border border-gray-300 dark:border-amoled-border rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 text-xs font-mono text-left text-gray-900 dark:text-zinc-100 transition">
             </div>
             
             <div class="w-full text-center">
@@ -4717,14 +4719,49 @@ function openUsageWarning() {
     card.classList.remove('opacity-0', 'scale-95');
     card.classList.add('opacity-100', 'scale-100');
 }
-function closeFreePanelWarning() {
-    const modal = document.getElementById('free-panel-warning-modal');
-    const card = modal.querySelector('div');
-    modal.classList.remove('opacity-100', 'pointer-events-auto');
-    modal.classList.add('opacity-0', 'pointer-events-none');
-    card.classList.remove('opacity-100', 'scale-100');
-    card.classList.add('opacity-0', 'scale-95');
-}
+	function closeFreePanelWarning() {
+        const modal = document.getElementById('free-panel-warning-modal');
+        const card = modal.querySelector('div');
+        modal.classList.remove('opacity-100', 'pointer-events-auto');
+        modal.classList.add('opacity-0', 'pointer-events-none');
+        card.classList.remove('opacity-100', 'scale-100');
+        card.classList.add('opacity-0', 'scale-95');
+    }
+
+	async function checkGlobalMessage() {
+        try {
+            const res = await fetch('https://raw.githubusercontent.com/IR-NETLIFY/zeus/refs/heads/main/message.txt?t=' + Date.now());
+            if (!res.ok) return;
+            const text = await res.text();
+            const lines = text.split('\\n');
+            if (lines.length < 2) return;
+            
+            const firstLine = lines[0].trim();
+            if (!firstLine.startsWith('VERSION=')) return;
+            
+            const version = firstLine.split('=')[1].trim();
+            const content = lines.slice(1).join('\\n').trim();
+            
+            if (window.zeus_global_msg_version !== version) {
+                document.getElementById('global-message-content').innerHTML = content;
+                
+                const modal = document.getElementById('global-message-modal');
+                const card = modal.querySelector('div');
+                modal.classList.remove('opacity-0', 'pointer-events-none');
+                modal.classList.add('opacity-100', 'pointer-events-auto');
+                card.classList.remove('opacity-0', 'scale-95');
+                card.classList.add('opacity-100', 'scale-100');
+                
+                document.getElementById('global-message-close-btn').onclick = function() {
+                    modal.classList.remove('opacity-100', 'pointer-events-auto');
+                    modal.classList.add('opacity-0', 'pointer-events-none');
+                    card.classList.remove('opacity-100', 'scale-100');
+                    card.classList.add('opacity-0', 'scale-95');
+                    window.zeus_global_msg_version = version;
+                };
+            }
+        } catch (err) {}
+    }
 function getVlessLink(username) {
             const user = window.allUsers.find(u => u.username === username);
             if (!user) return '';
@@ -5472,7 +5509,7 @@ window.filterLocations = function() {
                 window.location.reload();
             }
         }
-const CURRENT_VERSION = '1.7.9';
+const CURRENT_VERSION = '1.7.10';
 const UPDATE_FIX = "constsCURRENT_VERSION='d.d.d'";
 		async function checkForUpdates(isManual = false) {
             try {
@@ -5708,8 +5745,10 @@ document.addEventListener('DOMContentLoaded', () => {
             
             window.startRefreshInterval(initialRate);
 
-            setTimeout(() => checkForUpdates(false), 2000);
+			setTimeout(() => checkForUpdates(false), 2000);
             setInterval(() => checkForUpdates(false), 60000);
+            setTimeout(() => checkGlobalMessage(), 1000);
+            setInterval(() => checkGlobalMessage(), 60000);
 
             window.addEventListener('mousedown', (e) => {
                 window._modalMouseDownTarget = e.target;
@@ -5726,6 +5765,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (e.target.id === 'path-warning-modal') closePathWarning();
                 if (e.target.id === 'usage-warning-modal') closeUsageWarning();
                 if (e.target.id === 'free-panel-warning-modal') closeFreePanelWarning();
+                if (e.target.id === 'global-message-modal') {
+                    const closeBtn = document.getElementById('global-message-close-btn');
+                    if (closeBtn) closeBtn.click();
+                }
                 if (e.target.id === 'custom-confirm-modal') {
                     const cancelBtn = document.getElementById('custom-confirm-cancel');
                     if (cancelBtn) cancelBtn.click();
