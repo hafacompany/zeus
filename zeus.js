@@ -18,34 +18,28 @@ const DOWNSTREAM_GRAIN_TAIL_THRESHOLD = 512;
 const DOWNSTREAM_GRAIN_SILENT_MS = 1;
 const TCP_CONCURRENCY = 2;
 const PRELOAD_RACE_DIAL = true;
-
 let lastAutoResetCheck = 0;
 async function checkAutoResets(env) {
 	const now = Date.now();
 	if (now - lastAutoResetCheck < 3600000) return; 
 	lastAutoResetCheck = now;
 	try {
-		// ساعت 00:00 UTC دقیقاً برابر با 03:30 بامداد به وقت ایران است
 		const todayUtc = Math.floor(now / 86400000) * 86400000;
 		await env.DB.prepare(`UPDATE users SET used_gb = 0, last_reset_vol_time = ? WHERE auto_reset_vol_days > 0 AND ? >= (last_reset_vol_time + (auto_reset_vol_days * 86400000))`).bind(todayUtc, todayUtc).run();
 		await env.DB.prepare(`UPDATE users SET used_req = 0, last_reset_req_time = ? WHERE auto_reset_req_days > 0 AND ? >= (last_reset_req_time + (auto_reset_req_days * 86400000))`).bind(todayUtc, todayUtc).run();
 	} catch (e) {}
 }
-
 let lastIpRotateCheck = 0;
 async function checkAutoRotates(env) {
 	const now = Date.now();
-	// بررسی هر ۱ دقیقه یک‌بار
 	if (now - lastIpRotateCheck < 60000) return; 
 	lastIpRotateCheck = now;
 	try {
 		const { results: usersToRotate } = await env.DB.prepare("SELECT * FROM users WHERE auto_rotate_ip = 1 AND ? >= (last_rotate_time + (rotate_time * 60000))").bind(now).all();
 		if (!usersToRotate || usersToRotate.length === 0) return;
-
 		const res = await fetch('https://raw.githubusercontent.com/IR-NETLIFY/zeus/refs/heads/main/ips.txt');
 		if (!res.ok) return;
 		const text = await res.text();
-		
 		const blocks = text.split('----------');
 		let cachedIpsData = {};
 		blocks.forEach(block => {
@@ -59,7 +53,6 @@ async function checkAutoRotates(env) {
 			});
 			if (ips.length > 0) cachedIpsData[opName] = ips;
 		});
-
 		for (const u of usersToRotate) {
 			let availableIps = [];
 			if (u.ip_operator === 'all') {
@@ -68,7 +61,6 @@ async function checkAutoRotates(env) {
 				availableIps = cachedIpsData[u.ip_operator] || [];
 			}
 			availableIps = [...new Set(availableIps)];
-			
 			let count = u.ip_count || 20;
 			let selectedIps = [];
 			if (count >= availableIps.length) {
@@ -81,14 +73,12 @@ async function checkAutoRotates(env) {
 				}
 				selectedIps = shuffled.slice(0, count);
 			}
-
 			if (selectedIps.length > 0) {
 				await env.DB.prepare("UPDATE users SET ips = ?, last_rotate_time = ? WHERE id = ?").bind(selectedIps.join('\n'), now, u.id).run();
 			}
 		}
 	} catch (e) {}
 }
-
 export default {
 	async fetch(request, env, ctx) {
 		trackRequest(env, ctx);
@@ -154,11 +144,9 @@ const Router = {
 			if (!user || user.connection_type !== atob("dmxlc3M=")) {
 				return new Response("Not Found", { status: 404 });
 			}
-			
 			try {
 				await env.DB.prepare("UPDATE users SET used_req = used_req + 1 WHERE username = ?").bind(user.username).run();
 			} catch(e) {}
-
 			return await SubscriptionService.generateText(user, host);
 		} catch (err) {
 			return new Response("Error building config: " + err.message, { status: 500 });
@@ -212,6 +200,9 @@ const Router = {
 				port: user.port,
 				ips: user.ips,
 				fingerprint: user.fingerprint || "chrome",
+				user_proxy_iata: user.user_proxy_iata, 
+				user_socks5: user.user_socks5,         
+				user_proxy_ip: user.user_proxy_ip      
 			});
 			const html = HTML_TEMPLATES.status.replace("/* {{USER_DATA_PLACEHOLDER}} */", `window.statusUser = ${userJson};`);
 			return new Response(html, {
@@ -344,7 +335,7 @@ const Router = {
 			}
 		}
 		const authorized = await DbService.verifyApiAuth(request, env);
-		if (!authorized) {
+		if (!authorized && url.pathname !== "/api/test-proxy") {
 			return new Response(JSON.stringify({ error: "Unauthorized" }), {
 				status: 401,
 				headers: { "Content-Type": "application/json; charset=utf-8" },
@@ -354,11 +345,9 @@ const Router = {
 			const body = await request.json().catch(() => ({}));
 			let currentToken = env.CF_API_TOKEN || body.cf_token;
 			let currentAccountId = env.CF_ACCOUNT_ID;
-
 			if (!currentToken) {
 				return new Response(JSON.stringify({ error: "TOKEN_REQUIRED" }), { status: 400, headers: { "Content-Type": "application/json" } });
 			}
-
 			try {
 				if (!currentAccountId) {
 					const accRes = await fetch("https://api.cloudflare.com/client/v4/accounts", {
@@ -368,7 +357,6 @@ const Router = {
 					if (!accData.success || accData.result.length === 0) throw new Error("توکن نامعتبر است یا اکانتی یافت نشد.");
 					currentAccountId = accData.result[0].id;
 				}
-
 				const githubRes = await fetch("https://raw.githubusercontent.com/IR-NETLIFY/zeus/refs/heads/main/zeus.js?t=" + Date.now() + Math.random(), {
 					headers: {
 						"Cache-Control": "no-cache, no-store, must-revalidate",
@@ -378,14 +366,12 @@ const Router = {
 				});
 				if (!githubRes.ok) throw new Error("خطا در دریافت سورس جدید از گیت‌هاب");
 				const newCode = await githubRes.text();
-
 				const scriptName = env.WORKER_NAME || url.hostname.split(".")[0];
 				const bindingsRes = await fetch(`https://api.cloudflare.com/client/v4/accounts/${currentAccountId}/workers/scripts/${scriptName}/bindings`, {
 					headers: { Authorization: "Bearer " + currentToken },
 				});
 				const bindingsData = await bindingsRes.json();
 				if (!bindingsData.success) throw new Error("عدم دسترسی به تنظیمات ورکر. توکن نامعتبر است.");
-
 				const newBindings = [];
 				for (const b of bindingsData.result) {
 					if (b.type === "d1") {
@@ -396,24 +382,20 @@ const Router = {
 						newBindings.push({ type: "secret_text", name: "CF_ACCOUNT_ID", text: currentAccountId });
 					}
 				}
-
 				if (!newBindings.some((b) => b.name === "CF_API_TOKEN")) {
 					newBindings.push({ type: "secret_text", name: "CF_API_TOKEN", text: currentToken });
 				}
 				if (!newBindings.some((b) => b.name === "CF_ACCOUNT_ID")) {
 					newBindings.push({ type: "secret_text", name: "CF_ACCOUNT_ID", text: currentAccountId });
 				}
-
 				const metadata = {
 					main_module: "zeus.js",
 					compatibility_date: "2024-02-08",
 					bindings: newBindings,
 				};
-
 				const formData = new FormData();
 				formData.append("metadata", new Blob([JSON.stringify(metadata)], { type: "application/json" }));
 				formData.append("zeus.js", new Blob([newCode], { type: "application/javascript+module" }), "zeus.js");
-
 				const deployRes = await fetch(`https://api.cloudflare.com/client/v4/accounts/${currentAccountId}/workers/scripts/${scriptName}`, {
 					method: "PUT",
 					headers: { Authorization: "Bearer " + currentToken },
@@ -421,7 +403,6 @@ const Router = {
 				});
 				const deployData = await deployRes.json();
 				if (!deployData.success) throw new Error("خطا در اعمال آپدیت در کلودفلر.");
-
 				return new Response(JSON.stringify({ success: true }), { headers: { "Content-Type": "application/json" } });
 			} catch (err) {
 				const errorMsg = err.message + " | در صورت عدم موفقیت، از طریق لینک زیر آپدیت کنید: https://zeus-install.ir-netlify.workers.dev/";
@@ -431,11 +412,9 @@ const Router = {
 		if (url.pathname === "/api/restart-core" && request.method === "POST") {
 			let currentToken = env.CF_API_TOKEN;
 			let currentAccountId = env.CF_ACCOUNT_ID;
-
 			if (!currentToken || !currentAccountId) {
 				return new Response(JSON.stringify({ error: "TOKEN_REQUIRED" }), { status: 400, headers: { "Content-Type": "application/json" } });
 			}
-
 			try {
 				const githubRes = await fetch("https://raw.githubusercontent.com/IR-NETLIFY/zeus/refs/heads/main/zeus.js?t=" + Date.now(), {
 					headers: {
@@ -446,34 +425,28 @@ const Router = {
 				});
 				if (!githubRes.ok) throw new Error("خطا در دریافت سورس از گیت‌هاب");
 				const newCode = await githubRes.text();
-
 				const scriptName = env.WORKER_NAME || url.hostname.split(".")[0];
 				const bindingsRes = await fetch(`https://api.cloudflare.com/client/v4/accounts/${currentAccountId}/workers/scripts/${scriptName}/bindings`, {
 					headers: { Authorization: "Bearer " + currentToken },
 				});
 				const bindingsData = await bindingsRes.json();
 				if (!bindingsData.success) throw new Error("عدم دسترسی به تنظیمات ورکر");
-
 				const newBindings = [];
 				for (const b of bindingsData.result) {
 					if (b.type === "d1") {
 						newBindings.push({ type: "d1", name: b.name, id: b.database_id || b.id });
 					}
 				}
-
 				newBindings.push({ type: "secret_text", name: "CF_API_TOKEN", text: currentToken });
 				newBindings.push({ type: "secret_text", name: "CF_ACCOUNT_ID", text: currentAccountId });
-
 				const metadata = {
 					main_module: "zeus.js",
 					compatibility_date: "2024-02-08",
 					bindings: newBindings,
 				};
-
 				const formData = new FormData();
 				formData.append("metadata", new Blob([JSON.stringify(metadata)], { type: "application/json" }));
 				formData.append("zeus.js", new Blob([newCode], { type: "application/javascript+module" }), "zeus.js");
-
 				const deployRes = await fetch(`https://api.cloudflare.com/client/v4/accounts/${currentAccountId}/workers/scripts/${scriptName}`, {
 					method: "PUT",
 					headers: { Authorization: "Bearer " + currentToken },
@@ -481,7 +454,6 @@ const Router = {
 				});
 				const deployData = await deployRes.json();
 				if (!deployData.success) throw new Error("خطا در اعمال ری‌استارت در کلودفلر");
-
 				return new Response(JSON.stringify({ success: true }), { headers: { "Content-Type": "application/json" } });
 			} catch (err) {
 				return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: { "Content-Type": "application/json" } });
@@ -1294,13 +1266,10 @@ async function handleVLESS(env, storedData = null, ctx = null, request = null) {
 			try {
 				user = await env.DB.prepare("SELECT * FROM users WHERE uuid = ?").bind(reqUUID).first();
 			} catch (e) {}
-			
 			if (!user) {
 				serverSock.close();
 				return;
 			}
-
-			// ثبت شمارش ریکوئست در همان لحظه ورود (حتی اگر کاربر مسدود باشد)
 			username = user.username;
 			validUUID = reqUUID;
 			let currentReqs = USER_REQ_CACHE.get(username) || 0;
@@ -1308,7 +1277,6 @@ async function handleVLESS(env, storedData = null, ctx = null, request = null) {
 			if (!GLOBAL_TRAFFIC_CACHE.has(username)) {
 				GLOBAL_TRAFFIC_CACHE.set(username, 0);
 			}
-
 			if (isOfflineSet || serverSock.readyState !== WebSocket.OPEN) {
 				return;
 			}
@@ -1426,7 +1394,6 @@ async function handleVLESS(env, storedData = null, ctx = null, request = null) {
 				}
 				const rawData = chunkBuffer.slice(offset);
 				const respHeader = new Uint8Array([chunkBuffer[0], 0]);
-				
 				if ((user.block_ads === 1 || user.block_porn === 1) && addrType === 2 && port !== 53) {
 					try {
 						const dnsCheck = await dohQuery(addr, "A", targetDoh);
@@ -1437,7 +1404,6 @@ async function handleVLESS(env, storedData = null, ctx = null, request = null) {
 						}
 					} catch (e) {}
 				}
-
 				if (cmd === 2) {
 					if (port === 53) {
 						isDnsQuery = true;
@@ -1447,7 +1413,6 @@ async function handleVLESS(env, storedData = null, ctx = null, request = null) {
 					}
 					return;
 				}
-				
 				const connectTCP = async (dataPayload = null, useFallback = true) => {
 					if (remoteConnWrapper.connectingPromise) {
 						await remoteConnWrapper.connectingPromise;
@@ -1456,7 +1421,6 @@ async function handleVLESS(env, storedData = null, ctx = null, request = null) {
 					const task = (async () => {
 						let s = null;
 						const socks5 = user?.user_socks5 || "";
-
 						if (socks5) {
 							s = await connectProxy(socks5, addr, port, dataPayload);
 						} else {
@@ -1466,7 +1430,6 @@ async function handleVLESS(env, storedData = null, ctx = null, request = null) {
 							} else if (user?.user_proxy_ip) {
 								activeProxyIP = user.user_proxy_ip;
 							}
-
 							let fHost = activeProxyIP;
 							let fPort = port;
 							if (activeProxyIP) {
@@ -1489,7 +1452,6 @@ async function handleVLESS(env, storedData = null, ctx = null, request = null) {
 								}
 							}
 							const isCustomProxy = activeProxyIP && activeProxyIP !== "proxyip.cmliussss.net";
-
 							if (isCustomProxy) {
 								try {
 									s = await connectDirect(fHost, fPort, dataPayload, targetDoh);
@@ -2240,16 +2202,13 @@ async function connectProxy(proxyStr, destAddr, destPort, initialData) {
 			normalized = user && pass ? `socks5://${user}:${pass}@${server}:${port}` : `socks5://${server}:${port}`;
 		}
 	}
-
 	const isHttp = normalized.toLowerCase().startsWith("http://") || normalized.toLowerCase().startsWith("https://");
 	let cleanStr = normalized.replace(/^(socks4|socks5|socks|http|https):\/\//i, "");
-
 	if (isHttp) {
 		return await connectHttp(cleanStr, destAddr, destPort, initialData);
 	}
 	return await connectSocks5(cleanStr, destAddr, destPort, initialData);
 }
-
 async function connectSocks5(socksStr, destAddr, destPort, initialData) {
 	let user = "",
 		pass = "",
@@ -2287,21 +2246,17 @@ async function connectSocks5(socksStr, destAddr, destPort, initialData) {
 			host = remain;
 		}
 	}
-
 	const socket = connect({ hostname: host, port: port });
 	const reader = socket.readable.getReader();
 	const writer = socket.writable.getWriter();
-
 	try {
 		if (auth) {
 			await writer.write(new Uint8Array([0x05, 0x02, 0x00, 0x02]));
 		} else {
 			await writer.write(new Uint8Array([0x05, 0x01, 0x00]));
 		}
-
 		let res = await reader.read();
 		if (res.done || !res.value || res.value[0] !== 0x05) throw new Error("پاسخ نامعتبر از سرور (پروکسی SOCKS5 نیست یا خاموش است)");
-
 		const method = res.value[1];
 		if (method === 0x02) {
 			const uEnc = new TextEncoder().encode(user);
@@ -2312,12 +2267,10 @@ async function connectSocks5(socksStr, destAddr, destPort, initialData) {
 			authReq.set(uEnc, 2);
 			authReq[2 + uEnc.length] = pEnc.length;
 			authReq.set(pEnc, 3 + uEnc.length);
-
 			await writer.write(authReq);
 			let authRes = await reader.read();
 			if (authRes.done || !authRes.value || authRes.value[1] !== 0x00) throw new Error("نام کاربری یا رمز عبور پروکسی اشتباه است");
 		}
-
 		let addrType = 0x03;
 		let addrBytes;
 		if (isIPv4(destAddr)) {
@@ -2329,7 +2282,6 @@ async function connectSocks5(socksStr, destAddr, destPort, initialData) {
 			addrBytes[0] = enc.length;
 			addrBytes.set(enc, 1);
 		}
-
 		const req = new Uint8Array(4 + addrBytes.length + 2);
 		req[0] = 0x05;
 		req[1] = 0x01;
@@ -2339,15 +2291,12 @@ async function connectSocks5(socksStr, destAddr, destPort, initialData) {
 		const portOffset = 4 + addrBytes.length;
 		req[portOffset] = (destPort >> 8) & 0xff;
 		req[portOffset + 1] = destPort & 0xff;
-
 		await writer.write(req);
 		let connRes = await reader.read();
 		if (connRes.done || !connRes.value || connRes.value[1] !== 0x00) throw new Error("پروکسی وصل شد اما دسترسی به اینترنت آزاد ندارد");
-
 		if (initialData && initialData.byteLength > 0) {
 			await writer.write(convertToUint8Array(initialData));
 		}
-
 		writer.releaseLock();
 		reader.releaseLock();
 		return socket;
@@ -2364,7 +2313,6 @@ async function connectSocks5(socksStr, destAddr, destPort, initialData) {
 		throw e;
 	}
 }
-
 async function connectHttp(proxyStr, destAddr, destPort, initialData) {
 	let user = "",
 		pass = "",
@@ -2402,11 +2350,9 @@ async function connectHttp(proxyStr, destAddr, destPort, initialData) {
 			host = remain;
 		}
 	}
-
 	const socket = connect({ hostname: host, port: port });
 	const reader = socket.readable.getReader();
 	const writer = socket.writable.getWriter();
-
 	try {
 		const safeDest = destAddr.includes(":") ? `[${destAddr}]` : destAddr;
 		let req = `CONNECT ${safeDest}:${destPort} HTTP/1.1\r\nHost: ${safeDest}:${destPort}\r\n`;
@@ -2415,9 +2361,7 @@ async function connectHttp(proxyStr, destAddr, destPort, initialData) {
 			req += `Proxy-Authorization: Basic ${authBase64}\r\n`;
 		}
 		req += "\r\n";
-
 		await writer.write(new TextEncoder().encode(req));
-
 		let resStr = "";
 		while (true) {
 			const res = await reader.read();
@@ -2432,11 +2376,9 @@ async function connectHttp(proxyStr, destAddr, destPort, initialData) {
 				}
 			}
 		}
-
 		if (initialData && initialData.byteLength > 0) {
 			await writer.write(convertToUint8Array(initialData));
 		}
-
 		writer.releaseLock();
 		reader.releaseLock();
 		return socket;
@@ -2453,7 +2395,6 @@ async function connectHttp(proxyStr, destAddr, destPort, initialData) {
 		throw e;
 	}
 }
-
 const HTML_TEMPLATES = {
 	nginx: `<!DOCTYPE html>
 <html lang="fa" dir="rtl" class="dark">
@@ -2547,7 +2488,6 @@ const HTML_TEMPLATES = {
                 setTimeout(() => toast.remove(), 300);
             }, 3000);
         }
-
         window.alert = function(message) {
             const msgStr = message ? message.toString() : '';
             if (msgStr.includes('خطا') || msgStr.includes('⚠️') || msgStr.includes('❌')) {
@@ -2556,7 +2496,6 @@ const HTML_TEMPLATES = {
                 showToast(msgStr, 'success');
             }
         };
-
         async function handleSetup(event) {
             event.preventDefault();
             const password = document.getElementById('password').value;
@@ -2593,7 +2532,6 @@ const HTML_TEMPLATES = {
     </script>
 </body>
 </html>`,
-
 	login: `<!DOCTYPE html>
 <html lang="fa" dir="rtl" class="dark">
 <head>
@@ -2631,7 +2569,6 @@ const HTML_TEMPLATES = {
         </div>
         <div id="recovery-section" class="hidden">
             <h2 class="text-xl font-bold mb-4 text-center text-orange-600 dark:text-orange-400">بازیابی رمز پنل</h2>
-            
             <div class="mb-5 p-3 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800/50 rounded-xl text-xs leading-relaxed text-orange-800 dark:text-orange-300">
                 برای احراز هویت و اثبات مالکیت پنل، از طریق دکمه زیر وارد کلودفلر شوید و توکن دریافتی را کپی کرده و در کادر زیر وارد کنید.
                 <a href="https://dash.cloudflare.com/profile/api-tokens?permissionGroupKeys=%5B%7B%22key%22%3A%22workers_scripts%22%2C%22type%22%3A%22edit%22%7D%2C%7B%22key%22%3A%22workers_kv_storage%22%2C%22type%22%3A%22edit%22%7D%2C%7B%22key%22%3A%22d1%22%2C%22type%22%3A%22edit%22%7D%2C%7B%22key%22%3A%22account_settings%22%2C%22type%22%3A%22read%22%7D%2C%7B%22key%22%3A%22workers_subdomain%22%2C%22type%22%3A%22edit%22%7D%2C%7B%22key%22%3A%22account_analytics%22%2C%22type%22%3A%22read%22%7D%5D&accountId=*&zoneId=all&name=Zeus-Deployer-Token" target="_blank" class="mt-3 w-full flex items-center justify-center gap-2 py-2 bg-transparent border-2 border-green-600 text-green-700 hover:bg-green-900/20 hover:text-green-800 dark:border-green-500 dark:text-green-500 dark:hover:bg-green-900/40 dark:hover:text-green-400 rounded-lg font-bold transition shadow-md">
@@ -2639,7 +2576,6 @@ const HTML_TEMPLATES = {
                     دریافت توکن
                 </a>
             </div>
-
             <form onsubmit="handleRecovery(event)" class="space-y-4">
                 <div>
                     <input type="password" id="api-token" placeholder="توکن را وارد کنید" class="w-full px-3 py-2 bg-gray-50 dark:bg-amoled-input border border-gray-300 dark:border-amoled-border rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 text-xs text-center font-mono" required>
@@ -2670,7 +2606,6 @@ const HTML_TEMPLATES = {
                 setTimeout(() => toast.remove(), 300);
             }, 3000);
         }
-
         window.alert = function(message) {
             const msgStr = message ? message.toString() : '';
             if (msgStr.includes('خطا') || msgStr.includes('⚠️') || msgStr.includes('❌')) {
@@ -2679,7 +2614,6 @@ const HTML_TEMPLATES = {
                 showToast(msgStr, 'success');
             }
         };
-
         async function handleLogin(event) {
             event.preventDefault();
             const password = document.getElementById('password').value;
@@ -2738,7 +2672,6 @@ const HTML_TEMPLATES = {
     </script>
 </body>
 </html>`,
-
 	panel: `
 <!DOCTYPE html>
 <html lang="fa" dir="rtl">
@@ -2809,13 +2742,11 @@ const HTML_TEMPLATES = {
         @media (max-width: 768px) {
             header, main { zoom: 0.90; }
         }
-
         input[type="number"]::-webkit-outer-spin-button,
         input[type="number"]::-webkit-inner-spin-button {
             -webkit-appearance: none;
             margin: 0;
         }
-
         input[type="number"] {
             -moz-appearance: textfield;
         }
@@ -2843,7 +2774,6 @@ const HTML_TEMPLATES = {
                 </div>
             </div>
             <div class="flex items-center justify-center gap-3 w-full md:w-auto mt-2 md:mt-0">
-			
 				<button onclick="restartCore()" 
                         class="p-2 rounded-lg 
                                bg-blue-50 dark:bg-blue-950/30 
@@ -2856,7 +2786,6 @@ const HTML_TEMPLATES = {
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
                     </svg>
                 </button>
-				
                 <button id="theme-toggle" 
                         class="p-2 rounded-lg 
                                bg-amber-50 dark:bg-amber-950/30 
@@ -2872,7 +2801,6 @@ const HTML_TEMPLATES = {
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path>
                     </svg>
                 </button>
-                
                 <button id="update-toggle" onclick="checkForUpdates(true)" 
                         class="p-2 rounded-lg 
                                bg-green-50 dark:bg-green-950/30 
@@ -2882,13 +2810,11 @@ const HTML_TEMPLATES = {
                                text-green-700 dark:text-green-500 
                                relative shadow-sm" 
                         title="آپدیت">
-                    
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 11l3-3m0 0l3 3m-3-3v8m0-13a9 9 0 110 18 9 9 0 010-18z"></path>
                     </svg>
                     <span id="update-badge" class="absolute top-0 right-0 w-2.5 h-2.5 bg-red-500 border-2 border-green-50 dark:border-green-900 rounded-full hidden animate-pulse"></span>
                 </button>
-                
                 <button onclick="toggleSettingsModal(true)" 
                         class="p-2 rounded-lg 
                                bg-gray-50 dark:bg-zinc-800/50 
@@ -2902,7 +2828,6 @@ const HTML_TEMPLATES = {
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
                     </svg>
                 </button>
-				
                 <button 
                     onclick="logoutAdmin()" 
                     class="p-2 rounded-lg 
@@ -2938,7 +2863,6 @@ const HTML_TEMPLATES = {
             </span>
         </div>
     </div>
-
     <div class="bg-white dark:bg-amoled-card border border-gray-200 dark:border-amoled-border rounded-xl p-2.5 shadow-sm flex flex-col justify-center gap-1 hover:shadow-md hover:border-emerald-400 dark:hover:border-emerald-500/50 transition duration-300 relative overflow-hidden group min-h-[64px]">
         <div class="absolute -right-4 -bottom-4 w-16 h-16 bg-emerald-500/10 rounded-full blur-xl group-hover:scale-150 transition duration-500"></div>
         <div class="flex items-center justify-between relative z-10">
@@ -2955,7 +2879,6 @@ const HTML_TEMPLATES = {
             </span>
         </div>
     </div>
-
     <div id="card-cf-requests" class="bg-white dark:bg-amoled-card border border-gray-200 dark:border-amoled-border rounded-xl p-2.5 shadow-sm flex flex-col justify-center gap-1 hover:shadow-md hover:border-orange-400 dark:hover:border-orange-500/50 transition duration-300 relative overflow-hidden group min-h-[64px]">
         <div class="absolute -right-4 -bottom-4 w-16 h-16 bg-orange-500/10 rounded-full blur-xl group-hover:scale-150 transition duration-500"></div>
         <div class="flex items-center justify-between relative z-10">
@@ -2980,7 +2903,6 @@ const HTML_TEMPLATES = {
             </div>
         </div>
     </div>
-
     <div class="bg-white dark:bg-amoled-card border border-gray-200 dark:border-amoled-border rounded-xl p-2.5 shadow-sm flex flex-col justify-center gap-1 hover:shadow-md hover:border-blue-400 dark:hover:border-blue-500/50 transition duration-300 relative overflow-hidden group min-h-[64px]">
         <div class="absolute -right-4 -bottom-4 w-16 h-16 bg-blue-500/10 rounded-full blur-xl group-hover:scale-150 transition duration-500"></div>
         <div class="flex items-center justify-between relative z-10">
@@ -3146,7 +3068,7 @@ const HTML_TEMPLATES = {
                             </div>
                         </div>
                         <div>
-                            <label class="block text-[10px] font-bold text-gray-500 dark:text-zinc-400 mb-1 uppercase tracking-wider">زمان</label>
+                            <label class="block text-[10px] font-bold text-gray-500 dark:text-zinc-400 mb-1 uppercase tracking-wider">زمان (روز)</label>
                             <div class="relative">
                                 <span class="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-gray-400">
                                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
@@ -3174,7 +3096,6 @@ const HTML_TEMPLATES = {
                         </div>
                     </div>
                 </div>
-				
 				<div class="flex flex-col gap-3 border border-gray-100 dark:border-zinc-900 p-3 rounded-xl bg-gray-50/20 dark:bg-zinc-900/10 mt-4">
 					<div class="flex items-center justify-between">
 						<div class="flex items-center gap-2">
@@ -3197,7 +3118,6 @@ const HTML_TEMPLATES = {
 						</div>
 					</div>
 				</div>
-
 <div class="grid grid-cols-2 gap-3 mt-4">
     <div class="p-3 bg-gray-50/50 dark:bg-zinc-900/20 border border-gray-200/60 dark:border-zinc-800 rounded-2xl shadow-sm">
         <div class="flex items-center justify-between mb-2">
@@ -3212,7 +3132,6 @@ const HTML_TEMPLATES = {
             <input type="text" id="input-frag-int" placeholder="Int" value="1-2" dir="ltr" class="w-full px-1.5 py-1 bg-white dark:bg-zinc-950 border border-gray-200 dark:border-zinc-800 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 text-[10px] font-mono text-center text-gray-800 dark:text-zinc-100">
         </div>
     </div>
-
     <div class="p-3 bg-gray-50/50 dark:bg-zinc-900/20 border border-gray-200/60 dark:border-zinc-800 rounded-2xl shadow-sm">
         <label class="block text-[10px] font-bold text-gray-500 dark:text-zinc-400 mb-1.5 uppercase tracking-wider">Fingerprint</label>
         <div class="relative">
@@ -3236,7 +3155,7 @@ const HTML_TEMPLATES = {
 </div>
 						<div class="grid grid-cols-2 gap-2 mt-2">
     						<div class="flex items-center justify-between bg-gray-50 dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl p-1.5 shadow-sm">
-    						    <span class="text-[10px] sm:text-xs font-semibold text-gray-700 dark:text-zinc-300 whitespace-nowrap pl-1">NSFW Blacker</span>
+    						    <span class="text-[10px] sm:text-xs font-semibold text-gray-700 dark:text-zinc-300 whitespace-nowrap pl-1">NSFW blocker</span>
     						    <label class="relative inline-flex items-center cursor-pointer scale-[0.65] sm:scale-75 origin-left">
     						        <input type="checkbox" id="input-block-porn" class="sr-only peer">
     						        <div class="w-11 h-6 bg-gray-300 peer-focus:outline-none rounded-full peer dark:bg-zinc-700 peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:right-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-green-700"></div>
@@ -3292,7 +3211,6 @@ const HTML_TEMPLATES = {
     					<textarea id="input-ips" rows="2" placeholder="104.16.0.1" class="w-full px-3 py-2.5 bg-gray-50 dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 text-xs font-mono text-gray-800 dark:text-zinc-100 placeholder-gray-400/80 transition resize-none"></textarea>
 					</div>
                     <div class="mt-4 pt-4 border-t border-gray-150 dark:border-zinc-900 space-y-4">
-                        
                         <div>
                             <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4 border-b border-gray-100 dark:border-zinc-800/30 pb-3">
 	                            <div class="flex items-center gap-2 min-w-0">
@@ -3302,7 +3220,6 @@ const HTML_TEMPLATES = {
 	                            	</label>
 	                            	<label class="block text-xs sm:text-sm font-bold text-gray-700 dark:text-zinc-300 cursor-pointer truncate" onclick="document.getElementById('user-proxy-mode-toggle').click()">ثابت کردن کشور و آیپی</label>
 	                            </div>
-	
 	                            <div class="grid grid-cols-2 sm:flex items-center gap-2 w-full sm:w-auto">
 	                            	<button type="button" onclick="toggleDonateModal(true)" class="text-[11px] bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 px-2 py-2 sm:py-0.5 rounded border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition font-black shadow-sm text-center whitespace-nowrap">اهدای پروکسی شخصی ❤️</button>
 	                            	<a href="https://github.com/IR-NETLIFY/zeus-relay" target="_blank" class="text-[11px] bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-2 py-2 sm:py-0.5 rounded border border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition font-black shadow-sm text-center whitespace-nowrap">ساخت پروکسی شخصی</a>
@@ -3322,7 +3239,6 @@ const HTML_TEMPLATES = {
 								</div>
                             </div>
                         </div>
-
                         <div id="user-cf-proxy-section" class="transition-opacity duration-300 pt-4 border-t-2 border-gray-200 dark:border-zinc-800">
                             <label class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-zinc-300">ثابت کردن کشور (Cloudflare)</label>
                             <div class="mb-2">
@@ -3369,7 +3285,6 @@ const HTML_TEMPLATES = {
                     <label class="block text-xs font-medium mb-1.5 text-gray-700 dark:text-zinc-300">تعداد</label>
                     <input type="number" id="ip-count-input" min="1" value="20" dir="ltr" class="w-full px-3 py-2.5 bg-gray-50 dark:bg-amoled-input border border-gray-300 dark:border-amoled-border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs font-mono text-center">
                 </div>
-                
                 <div class="flex flex-col gap-2 border-t border-gray-100 dark:border-zinc-800/60 pt-3 mt-2">
                     <div class="flex items-center justify-between">
                         <span class="text-xs font-bold text-gray-700 dark:text-zinc-300">تعویض خودکار آیپی</span>
@@ -3400,7 +3315,6 @@ const HTML_TEMPLATES = {
             </button>
         </div>
         <div class="p-5 space-y-4">
-            
             <div class="p-4 bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-200 dark:border-emerald-500/30 rounded-2xl relative">
                 <h4 class="text-[13px] font-black text-emerald-700 dark:text-emerald-400 mb-2 flex items-center gap-1.5">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
@@ -3418,12 +3332,10 @@ const HTML_TEMPLATES = {
                     </button>
                 </div>
             </div>
-
             <div class="relative py-1 flex items-center justify-center">
                 <span class="absolute w-full border-t border-gray-200 dark:border-zinc-800"></span>
                 <span class="bg-white dark:bg-amoled-card px-3 text-[10px] font-bold text-gray-400 relative">یا اسکن عمومی</span>
             </div>
-
             <div class="p-4 bg-gray-50 dark:bg-zinc-900/40 border border-gray-200 dark:border-amoled-border rounded-2xl">
                 <h4 class="text-[13px] font-black text-gray-700 dark:text-zinc-300 mb-2 flex items-center gap-1.5">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"></path></svg>
@@ -3432,11 +3344,9 @@ const HTML_TEMPLATES = {
                 <p class="text-[10px] text-gray-500 dark:text-zinc-500 mb-3 leading-relaxed font-medium">
                     جستجو در منابع رایگان؛ به دلیل نیاز به تست کیفیت زمان‌بر است.
                 </p>
-                
                 <div id="proxy-loading-state" class="text-center text-[11px] text-blue-500 font-bold hidden my-3 whitespace-pre-line leading-relaxed">
                     در حال اسکن...
                 </div>
-
                 <div id="proxy-selection-form" class="flex flex-col gap-2">
                     <select id="proxy-country-select" class="w-full px-3 py-2 bg-white dark:bg-amoled-input border border-gray-300 dark:border-zinc-700 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-700 dark:text-zinc-300 cursor-pointer">
                         <option value="">در حال آماده‌سازی...</option>
@@ -3446,7 +3356,6 @@ const HTML_TEMPLATES = {
                     </button>
                 </div>
             </div>
-            
             <div class="pt-1">
                 <button type="button" onclick="toggleProxySelectorModal(false)" class="w-full py-2.5 bg-transparent border-2 border-gray-300 text-gray-600 hover:bg-gray-100 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-300 font-bold rounded-xl text-xs transition shadow-sm">انصراف و بستن</button>
             </div>
@@ -3465,15 +3374,12 @@ const HTML_TEMPLATES = {
             <p class="text-[11px] text-gray-600 dark:text-zinc-400 leading-relaxed font-medium">
                 اگر سرور دارید میتونید با دکمه <span class="text-blue-600 dark:text-blue-400 font-black">«ساخت پروکسی شخصی»</span> یک پروکسی بسازید و اهدا کنید به پروژه
             </p>
-            
             <div>
                 <input type="text" id="donate-proxy-input" placeholder="user:pass@ip:port" dir="ltr" class="w-full px-3 py-2.5 bg-gray-50 dark:bg-amoled-input border border-gray-300 dark:border-amoled-border rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 text-xs font-mono text-left text-gray-900 dark:text-zinc-100 transition">
             </div>
-            
             <div class="w-full text-center">
                 <span id="donate-result" class="inline-block mt-1 text-[11px] font-bold transition-colors break-words leading-relaxed empty:hidden"></span>
             </div>
-
             <div class="pt-2 flex gap-3">
                 <button type="button" onclick="toggleDonateModal(false)" class="flex-1 py-2 bg-transparent border-2 border-rose-700 text-rose-700 hover:bg-rose-900/20 hover:text-rose-800 dark:border-rose-700 dark:text-rose-500 dark:hover:bg-rose-900/40 dark:hover:text-rose-400 font-bold rounded-xl text-xs transition shadow-sm">لغو</button>
                 <button type="button" id="donate-submit-btn" onclick="testAndDonateProxy()" class="flex-1 py-2 bg-transparent border-2 border-emerald-600 text-emerald-700 hover:bg-emerald-900/20 hover:text-emerald-800 dark:border-emerald-500 dark:text-emerald-500 dark:hover:bg-emerald-900/40 dark:hover:text-emerald-400 font-bold rounded-xl text-xs transition shadow-sm">تست و اهدا</button>
@@ -3508,7 +3414,6 @@ const HTML_TEMPLATES = {
                         </div>
                     </div>
                 </div>
-               
                 <div class="pt-4 border-t-2 border-gray-300 dark:border-zinc-700">
                     <h4 class="text-sm font-bold mb-3 text-gray-800 dark:text-zinc-200">🔒 تغییر رمز عبور مدیریت</h4>
                     <div class="space-y-3">
@@ -3587,19 +3492,15 @@ const HTML_TEMPLATES = {
                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                 </button>
             </div>
-            
             <div class="mb-5 p-3 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800/50 rounded-xl text-xs leading-relaxed text-orange-800 dark:text-orange-300 font-medium">
                 توکن کلودفلر شما در این پنل ذخیره نشده است. برای فعال‌سازی آپدیت خودکار از داخل پنل، لطفاً توکن خود را دریافت کرده و در کادر زیر وارد کنید.
             </div>
-
             <a href="https://dash.cloudflare.com/profile/api-tokens?permissionGroupKeys=%5B%7B%22key%22%3A%22workers_scripts%22%2C%22type%22%3A%22edit%22%7D%2C%7B%22key%22%3A%22workers_kv_storage%22%2C%22type%22%3A%22edit%22%7D%2C%7B%22key%22%3A%22d1%22%2C%22type%22%3A%22edit%22%7D%2C%7B%22key%22%3A%22account_settings%22%2C%22type%22%3A%22read%22%7D%2C%7B%22key%22%3A%22workers_subdomain%22%2C%22type%22%3A%22edit%22%7D%2C%7B%22key%22%3A%22account_analytics%22%2C%22type%22%3A%22read%22%7D%5D&accountId=*&zoneId=all&name=Zeus-Deployer-Token" target="_blank" class="flex items-center justify-center gap-2 w-full py-3 bg-[#d94800] hover:bg-[#e35802] text-white font-bold rounded-xl text-sm transition duration-300 mb-4 shadow-md shadow-orange-500/20">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
                 دریافت توکن کلودفلر
             </a>
-
             <div class="space-y-4">
                 <input type="password" id="update-token-input" placeholder="توکن را اینجا وارد کنید" class="w-full px-4 py-3 bg-gray-50 dark:bg-amoled-input border border-gray-300 dark:border-amoled-border rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500 text-sm font-mono text-center text-gray-900 dark:text-zinc-100 transition" dir="auto">
-                
                 <button id="submit-token-btn" onclick="submitTokenForUpdate()" class="w-full py-3 bg-transparent border-2 border-green-600 text-green-700 hover:bg-green-900/20 hover:text-green-800 dark:border-green-500 dark:text-green-500 dark:hover:bg-green-900/40 dark:hover:text-green-400 font-bold rounded-xl text-sm transition duration-300 shadow-lg">
                     ثبت و آپدیت پنل
                 </button>
@@ -3803,7 +3704,6 @@ const HTML_TEMPLATES = {
 		</div>
 	</div>
 <div id="toast-container" class="fixed top-5 left-1/2 -translate-x-1/2 z-[9999] flex flex-col gap-2 pointer-events-none"></div>
-
 <div id="custom-confirm-modal" class="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm opacity-0 pointer-events-none transition-all duration-300 ease-out">
     <div id="custom-confirm-card" class="w-full max-w-sm bg-white dark:bg-amoled-card border border-gray-200 dark:border-amoled-border rounded-3xl shadow-2xl overflow-hidden p-6 text-center transform transition-all scale-95 duration-300">
         <h3 class="font-black text-xl text-gray-900 dark:text-white mb-3">تأیید عملیات</h3>
@@ -3821,22 +3721,17 @@ const HTML_TEMPLATES = {
             const colors = type === 'error' 
                 ? 'bg-red-50 dark:bg-red-900/40 border-red-200 dark:border-red-800 text-red-600 dark:text-red-400' 
                 : 'bg-green-50 dark:bg-green-900/40 border-green-200 dark:border-green-800 text-green-700 dark:text-green-500';
-            
             toast.className = 'px-4 py-3 border rounded-xl shadow-lg font-bold text-sm transform transition-all duration-300 -translate-y-full opacity-0 ' + colors;
             toast.innerText = message;
-            
             container.appendChild(toast);
-            
             requestAnimationFrame(() => {
                 toast.classList.remove('-translate-y-full', 'opacity-0');
             });
-            
             setTimeout(() => {
                 toast.classList.add('-translate-y-full', 'opacity-0');
                 setTimeout(() => toast.remove(), 300);
             }, 3000);
         }
-
         function customConfirm(message) {
             return new Promise((resolve) => {
                 const modal = document.getElementById('custom-confirm-modal');
@@ -3844,14 +3739,11 @@ const HTML_TEMPLATES = {
                 const msgEl = document.getElementById('custom-confirm-message');
                 const btnOk = document.getElementById('custom-confirm-ok');
                 const btnCancel = document.getElementById('custom-confirm-cancel');
-
                 msgEl.innerText = message;
-
                 modal.classList.remove('opacity-0', 'pointer-events-none');
                 modal.classList.add('opacity-100', 'pointer-events-auto');
                 card.classList.remove('scale-95');
                 card.classList.add('scale-100');
-
                 const cleanup = () => {
                     modal.classList.remove('opacity-100', 'pointer-events-auto');
                     modal.classList.add('opacity-0', 'pointer-events-none');
@@ -3860,15 +3752,12 @@ const HTML_TEMPLATES = {
                     btnOk.removeEventListener('click', onOk);
                     btnCancel.removeEventListener('click', onCancel);
                 };
-
                 const onOk = () => { cleanup(); resolve(true); };
                 const onCancel = () => { cleanup(); resolve(false); };
-
                 btnOk.addEventListener('click', onOk);
                 btnCancel.addEventListener('click', onCancel);
             });
         }
-
         window.alert = function(message) {
             const msgStr = message ? message.toString() : '';
             if (msgStr.includes('خطا') || msgStr.includes('⚠️') || msgStr.includes('❌')) {
@@ -4032,7 +3921,6 @@ const HTML_TEMPLATES = {
                 }
             }
         };
-
         window.toggleBulkFragInputs = function(show) {
             const inputs = document.getElementById('bulk-frag-inputs-container');
             if (inputs) {
@@ -4043,7 +3931,6 @@ const HTML_TEMPLATES = {
                 }
             }
         };
-
         function toggleBulkEditModal(show) {
             const modal = document.getElementById('bulk-edit-modal');
             const card = document.getElementById('bulk-edit-modal-card');
@@ -4207,7 +4094,6 @@ const HTML_TEMPLATES = {
 				else container.classList.add('hidden');
 			}
 		};
-
         window.toggleAutoRotateIpInputs = function(show) {
 			const container = document.getElementById('auto-rotate-ip-inputs-container');
 			if (container) {
@@ -4215,7 +4101,6 @@ const HTML_TEMPLATES = {
 				else container.classList.add('hidden');
 			}
 		};
-
         window.toggleFragInputs = function(show) {
             const container = document.getElementById('frag-events-container');
             if (container) {
@@ -4226,7 +4111,6 @@ const HTML_TEMPLATES = {
                 }
             }
         };
-
         function toggleModal(show) {
             const modal = document.getElementById('user-modal');
             const card = document.getElementById('user-modal-card');
@@ -4274,7 +4158,6 @@ const HTML_TEMPLATES = {
 				document.getElementById('input-auto-reset-vol').value = '';
 				document.getElementById('input-auto-reset-req').value = '';
 				window.toggleAutoResetInputs(false);
-				
             }
         }
 		function toggleUpdateModal(show, version = '') {
@@ -4311,16 +4194,13 @@ const HTML_TEMPLATES = {
             const fragToggle = document.getElementById('input-frag-toggle');
             if (fragToggle) fragToggle.checked = true;
             window.toggleFragInputs(true);
-			
 			const autoResetToggle = document.getElementById('input-auto-reset-toggle');
 			if (autoResetToggle) autoResetToggle.checked = false;
 			document.getElementById('input-auto-reset-vol').value = '';
 			document.getElementById('input-auto-reset-req').value = '';
 			window.toggleAutoResetInputs(false);
-
 			const blockAdsToggle = document.getElementById('input-block-ads');
 			if (blockAdsToggle) blockAdsToggle.checked = true;
-
             const userProxyToggle = document.getElementById('user-proxy-mode-toggle');
             if (userProxyToggle) userProxyToggle.checked = false;
             if (typeof window.toggleUserProxyMode === 'function') window.toggleUserProxyMode(false);
@@ -4335,20 +4215,18 @@ const HTML_TEMPLATES = {
             if (userSocksInput) userSocksInput.value = '';
             const userProxyResult = document.getElementById('test-user-proxy-result');
             if (userProxyResult) userProxyResult.innerText = '';
-
 			document.getElementById('hidden-auto-rotate').value = '0';
 			document.getElementById('hidden-rotate-time').value = '';
 			document.getElementById('hidden-ip-operator').value = 'all';
 			document.getElementById('hidden-ip-count').value = '20';
-
             toggleModal(true);
         }
         const themeToggleBtn = document.getElementById('theme-toggle');
-		if (localStorage.getItem('color-theme') === 'dark' || (!('color-theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-            document.documentElement.classList.add('dark');
-        } else {
-            document.documentElement.classList.remove('dark');
-        }
+		if (localStorage.getItem('color-theme') === 'light') {
+    		document.documentElement.classList.remove('dark');
+		} else {
+    		document.documentElement.classList.add('dark');
+		}
         themeToggleBtn.addEventListener('click', () => {
             if (document.documentElement.classList.contains('dark')) {
                 document.documentElement.classList.remove('dark');
@@ -4360,13 +4238,11 @@ const HTML_TEMPLATES = {
         });
 		async function restartCore() {
 			if (!await customConfirm('آیا از ری استارت پنل مطمئن هستید؟ کاربران شما لحظه ای قطع خواهند شد.')) return;
-            
             const btn = document.querySelector('button[title="ری استارت پنل"]');
             if (btn) {
                 btn.disabled = true;
                 btn.classList.add('animate-pulse');
             }
-            
             try {
                 const res = await fetch('/api/restart-core', {
                     method: 'POST',
@@ -4527,7 +4403,6 @@ const HTML_TEMPLATES = {
             const tableContainer = document.getElementById('users-table-container');
             const emptyState = document.getElementById('empty-state');
             const tbody = document.getElementById('users-tbody');
-
             let locationsMap = {};
             try {
                 const cachedLocations = localStorage.getItem('cached_locations_list');
@@ -4550,7 +4425,6 @@ const HTML_TEMPLATES = {
                 loadingState.classList.add('hidden');
                 emptyState.classList.add('hidden');
                 tableContainer.classList.remove('hidden');
-                
                 let locationsMap = {};
                 try {
                     const cachedLocations = localStorage.getItem('cached_locations_list');
@@ -4560,10 +4434,8 @@ const HTML_TEMPLATES = {
                         });
                     }
                 } catch(e) {}
-
                 let proxyFlagCache = {};
                 try { proxyFlagCache = JSON.parse(localStorage.getItem('proxy_flag_cache') || '{}'); } catch(e) {}
-
                 tbody.innerHTML = users.map(user => {
                     let daysRemaining = 'نامحدود';
                     let daysPercent = 100;
@@ -4702,7 +4574,6 @@ const HTML_TEMPLATES = {
                         ? '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>'
                         : '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>';
                     const isChecked = (window.selectedUsernames && window.selectedUsernames.has(user.username)) ? 'checked' : '';
-                    
                     let locBadge = '';
                     if (user.user_proxy_iata) {
                         const iata = user.user_proxy_iata.toUpperCase();
@@ -4718,7 +4589,6 @@ const HTML_TEMPLATES = {
                             locBadge = '<span data-proxy="' + targetProxy + '" title="پروکسی اختصاصی" class="async-proxy-flag text-xl leading-none px-0.5 drop-shadow-[0_0_2px_rgba(0,0,0,0.3)] dark:drop-shadow-[0_0_2px_rgba(255,255,255,0.3)]">⏳</span>';
                         }
                     }
-
                     return '<tr class="hover:bg-gray-50 dark:hover:bg-zinc-900/40 border-b border-gray-100 dark:border-zinc-800 last:border-0">' +
                             '<td class="p-1 border-r border-gray-100 dark:border-zinc-800 text-center select-none">' +
                                 '<input type="checkbox" name="select-user" value="' + encodeURIComponent(user.username) + '" onchange="onUserSelectChange(this)" ' + isChecked + ' class="w-4 h-4 rounded-md border-2 border-gray-300 dark:border-zinc-700 text-blue-600 bg-white dark:bg-zinc-800 checked:bg-blue-600 checked:border-blue-600 focus:ring-blue-500/50 focus:ring-offset-0 transition-all duration-200 cursor-pointer hover:scale-105 active:scale-95">' +
@@ -4779,7 +4649,6 @@ const HTML_TEMPLATES = {
 							'</tr>';
                 }).join('');
                 updateBulkActionsBar();
-
                 if (typeof loadProxyFlags === 'function') {
                     setTimeout(loadProxyFlags, 50);
                 }
@@ -4846,20 +4715,16 @@ const HTML_TEMPLATES = {
             const isFragEnabled = document.getElementById('input-frag-toggle').checked;
             const frag_len = isFragEnabled ? (document.getElementById('input-frag-len').value || "200-3000") : "";
             const frag_int = isFragEnabled ? (document.getElementById('input-frag-int').value || "1-2") : "";
-            
             const isAutoReset = document.getElementById('input-auto-reset-toggle').checked;
             const auto_reset_vol_days = isAutoReset ? parseInt(document.getElementById('input-auto-reset-vol').value) || 0 : 0;
             const auto_reset_req_days = isAutoReset ? parseInt(document.getElementById('input-auto-reset-req').value) || 0 : 0;
-
             const auto_rotate_ip = parseInt(document.getElementById('hidden-auto-rotate').value) || 0;
             const rotate_time = parseInt(document.getElementById('hidden-rotate-time').value) || 0;
             const ip_operator = document.getElementById('hidden-ip-operator').value || 'all';
             const ip_count = parseInt(document.getElementById('hidden-ip-count').value) || 20;
-
             const userProxyMode = document.getElementById('user-proxy-mode-toggle') ? document.getElementById('user-proxy-mode-toggle').checked : false;
             const userProxyIata = !userProxyMode ? (document.getElementById('user-location-select') ? document.getElementById('user-location-select').value : null) : null;
             const userSocks5 = userProxyMode ? (document.getElementById('user-socks5-input') ? document.getElementById('user-socks5-input').value.trim() : null) : null;
-
             if (checkedPorts.length === 0) {
                 alert('⚠️ لطفا حداقل یک پورت را برای اتصال انتخاب کنید!');
                 submitButton.disabled = false;
@@ -4938,7 +4803,6 @@ function openUsageWarning() {
         card.classList.remove('opacity-100', 'scale-100');
         card.classList.add('opacity-0', 'scale-95');
     }
-
 	async function checkGlobalMessage() {
         try {
             const res = await fetch('https://raw.githubusercontent.com/IR-NETLIFY/zeus/refs/heads/main/message.txt?t=' + Date.now());
@@ -4946,23 +4810,18 @@ function openUsageWarning() {
             const text = await res.text();
             const lines = text.split('\\n');
             if (lines.length < 2) return;
-            
             const firstLine = lines[0].trim();
             if (!firstLine.startsWith('VERSION=')) return;
-            
             const version = firstLine.split('=')[1].trim();
             const content = lines.slice(1).join('\\n').trim();
-            
             if (window.zeus_global_msg_version !== version) {
                 document.getElementById('global-message-content').innerHTML = content;
-                
                 const modal = document.getElementById('global-message-modal');
                 const card = modal.querySelector('div');
                 modal.classList.remove('opacity-0', 'pointer-events-none');
                 modal.classList.add('opacity-100', 'pointer-events-auto');
                 card.classList.remove('opacity-0', 'scale-95');
                 card.classList.add('opacity-100', 'scale-100');
-                
                 document.getElementById('global-message-close-btn').onclick = function() {
                     modal.classList.remove('opacity-100', 'pointer-events-auto');
                     modal.classList.add('opacity-0', 'pointer-events-none');
@@ -5039,7 +4898,6 @@ function getVlessLink(username) {
                 card.classList.add('opacity-0', 'scale-95');
             }
         }
-
         function showSubQr(encodedUsername) {
             const username = decodeURIComponent(encodedUsername);
             const link = getSubLink(username);
@@ -5074,7 +4932,6 @@ function editUser(encodedUsername) {
     editingUsername = username;
     document.getElementById('modal-title').innerText = 'ویرایش کاربر: ' + username;
     document.getElementById('submit-btn').innerText = 'ذخیره تغییرات';
-    
     const nameInput = document.getElementById('input-name');
     nameInput.value = username;
     nameInput.disabled = false;
@@ -5083,56 +4940,44 @@ function editUser(encodedUsername) {
     document.getElementById('input-req-limit').value = user.limit_req || '';
     document.getElementById('input-ips').value = user.ips || '';
     document.getElementById('fingerprint-select').value = user.fingerprint || 'chrome';
-	
 	document.getElementById('hidden-auto-rotate').value = user.auto_rotate_ip || '0';
 	document.getElementById('hidden-rotate-time').value = user.rotate_time || '';
 	document.getElementById('hidden-ip-operator').value = user.ip_operator || 'all';
 	document.getElementById('hidden-ip-count').value = user.ip_count || '20';
     document.getElementById('fingerprint-select').value = user.fingerprint || 'chrome';
-    
     document.getElementById('input-block-porn').checked = (user.block_porn === 1);
     document.getElementById('input-block-ads').checked = (user.block_ads === 1);
-    
     const hasAutoReset = Boolean((user.auto_reset_vol_days && user.auto_reset_vol_days > 0) || (user.auto_reset_req_days && user.auto_reset_req_days > 0));
     const autoResetToggle = document.getElementById('input-auto-reset-toggle');
     if (autoResetToggle) autoResetToggle.checked = hasAutoReset;
     document.getElementById('input-auto-reset-vol').value = hasAutoReset && user.auto_reset_vol_days > 0 ? user.auto_reset_vol_days : '';
     document.getElementById('input-auto-reset-req').value = hasAutoReset && user.auto_reset_req_days > 0 ? user.auto_reset_req_days : '';
     window.toggleAutoResetInputs(hasAutoReset);
-    
     const hasFrag = Boolean(user.frag_len && user.frag_len !== "" && user.frag_int && user.frag_int !== "");
     const fragToggle = document.getElementById('input-frag-toggle');
     if (fragToggle) fragToggle.checked = hasFrag;
-    
     document.getElementById('input-frag-len').value = hasFrag ? user.frag_len : '200-3000';
     document.getElementById('input-frag-int').value = hasFrag ? user.frag_int : '1-2';
     window.toggleFragInputs(hasFrag);
-
     const userPorts = String(user.port || '').split(',').map(p => p.trim());
     const predefinedPorts = [...tlsPorts, ...nonTlsPorts];
     const customPorts = userPorts.filter(p => !predefinedPorts.includes(p) && p !== '');
-
     document.querySelectorAll('input[name="ports"]').forEach(cb => {
         cb.checked = userPorts.includes(cb.value);
     });
-
     const customPortInput = document.getElementById('input-custom-ports');
     if (customPortInput) customPortInput.value = customPorts.join(' ');
-
     const userProxyToggle = document.getElementById('user-proxy-mode-toggle');
     const userLocSelect = document.getElementById('user-location-select');
     const userLocSearch = document.getElementById('user-location-search');
     const userSocksInput = document.getElementById('user-socks5-input');
-
     if (userLocSearch) {
         userLocSearch.value = '';
         if (typeof window.filterUserLocations === 'function') window.filterUserLocations();
     }
-
 	const targetProxy = user.user_socks5 || user.user_proxy_ip;
 	const userProxyResult = document.getElementById('test-user-proxy-result');
 	if (userProxyResult) userProxyResult.innerText = '';
-
 	if (targetProxy) {
 		if (userProxyToggle) userProxyToggle.checked = true;
 		if (typeof window.toggleUserProxyMode === 'function') window.toggleUserProxyMode(true);
@@ -5144,7 +4989,6 @@ function editUser(encodedUsername) {
 		if (userSocksInput) userSocksInput.value = '';
 		if (userLocSelect) userLocSelect.value = user.user_proxy_iata || '';
 	}
-
 	toggleModal(true);
 }
         async function deleteUser(encodedUsername) {
@@ -5177,10 +5021,8 @@ function editUser(encodedUsername) {
             const select = document.getElementById('location-select');
             const userSelect = document.getElementById('user-location-select');
             locations.sort((a, b) => (a.cca2 || '').localeCompare(b.cca2 || ''));
-            
             let html = '<option value="">🌐 پیش‌فرض (لوکیشن خودکار)</option>';
             let userHtml = '<option value="">🌐 استفاده از تنظیمات عمومی پنل</option>';
-            
             locations.forEach(loc => {
                 if (loc.iata && loc.city) {
                     const flag = getFlagEmoji(loc.cca2);
@@ -5207,7 +5049,6 @@ async function loadLocations() {
             }
         } catch(e) {}
     }
-    
     try {
         const locRes = await fetch('/locations');
         if (locRes.ok) {
@@ -5218,7 +5059,6 @@ async function loadLocations() {
             }
         }
     } catch(e) {}
-
     try {
         const statusRes = await fetch('/api/proxy-ip');
         let activeIata = '';
@@ -5226,10 +5066,8 @@ async function loadLocations() {
             const statusData = await statusRes.json();
             activeIata = statusData.iata || '';
             localStorage.setItem('cached_active_iata', activeIata);
-            
             const socksInput = document.getElementById('socks5-input');
             const proxyToggle = document.getElementById('proxy-mode-toggle');
-            
             if (statusData.socks5) {
                 if (socksInput) socksInput.value = statusData.socks5;
                 if (proxyToggle) {
@@ -5244,7 +5082,6 @@ async function loadLocations() {
                 }
             }
         }
-        
         const updatedCachedLocs = localStorage.getItem('cached_locations_list');
         if (updatedCachedLocs) {
             const parsed = JSON.parse(updatedCachedLocs);
@@ -5315,10 +5152,8 @@ async function testSocksProxy() {
 	btn.innerText = 'صبر کنید...';
 	resultSpan.innerText = '';
 	resultSpan.className = 'text-[11px] font-bold transition-colors empty:hidden';
-	
 	const controller = new AbortController();
 	const timeoutId = setTimeout(() => controller.abort(), 5000);
-
 	try {
 		const res = await fetch('/api/test-proxy', {
 			method: 'POST',
@@ -5349,26 +5184,22 @@ async function testSocksProxy() {
 		btn.innerText = 'تست پروکسی';
 	}
 }
-
 window.toggleProxyMode = function(isSocksMode) {
     const cfSection = document.getElementById('cf-proxy-section');
     const socksContainer = document.getElementById('socks5-container');
     const locationSelect = document.getElementById('location-select');
     const locationSearch = document.getElementById('location-search');
     const socksInput = document.getElementById('socks5-input');
-
     if (isSocksMode) {
         if (cfSection) cfSection.classList.add('opacity-50', 'pointer-events-none');
         if (locationSelect) locationSelect.disabled = true;
         if (locationSearch) locationSearch.disabled = true;
-
         if (socksContainer) socksContainer.classList.remove('opacity-50', 'pointer-events-none');
         if (socksInput) socksInput.disabled = false;
     } else {
         if (cfSection) cfSection.classList.remove('opacity-50', 'pointer-events-none');
         if (locationSelect) locationSelect.disabled = false;
         if (locationSearch) locationSearch.disabled = false;
-
         if (socksContainer) socksContainer.classList.add('opacity-50', 'pointer-events-none');
         if (socksInput) socksInput.disabled = true;
     }
@@ -5379,7 +5210,6 @@ window.toggleUserProxyMode = function(isSocksMode) {
     const locationSelect = document.getElementById('user-location-select');
     const locationSearch = document.getElementById('user-location-search');
     const socksInput = document.getElementById('user-socks5-input');
-
     if (isSocksMode) {
         if (cfSection) cfSection.classList.add('opacity-50', 'pointer-events-none');
         if (locationSelect) locationSelect.disabled = true;
@@ -5397,22 +5227,17 @@ window.toggleUserProxyMode = function(isSocksMode) {
 async function loadProxyFlags() {
     const badges = document.querySelectorAll('.async-proxy-flag');
     if (badges.length === 0) return;
-    
     let cache = {};
     try { cache = JSON.parse(localStorage.getItem('proxy_flag_cache') || '{}'); } catch(e) {}
-
     for (let badge of badges) {
         const proxyStr = badge.getAttribute('data-proxy');
         if (!proxyStr) continue;
-
         if (cache[proxyStr]) {
             badge.innerHTML = cache[proxyStr];
             badge.classList.remove('async-proxy-flag');
             continue;
         }
-
         badge.classList.remove('async-proxy-flag');
-
         try {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 4000);
@@ -5424,15 +5249,12 @@ async function loadProxyFlags() {
             });
             clearTimeout(timeoutId);
             const data = await res.json();
-            
             let flag = '🌐';
             if (res.ok && data.success && data.country) {
                 flag = typeof getFlagEmoji === 'function' ? getFlagEmoji(data.country) : '🌐';
             }
-            
             cache[proxyStr] = flag;
             localStorage.setItem('proxy_flag_cache', JSON.stringify(cache));
-            
             badge.innerHTML = flag;
         } catch (e) {
             badge.innerHTML = '🌐';
@@ -5442,9 +5264,7 @@ async function loadProxyFlags() {
 window.filterUserLocations = function() {
     const searchTerm = document.getElementById('user-location-search').value.toLowerCase().trim();
     const cachedLocations = localStorage.getItem('cached_locations_list');
-    
     if (!cachedLocations) return;
-    
     try {
         const allLocations = JSON.parse(cachedLocations);
         const filteredLocations = allLocations.filter(loc => {
@@ -5452,7 +5272,6 @@ window.filterUserLocations = function() {
             const searchString = (loc.iata + ' ' + loc.city + ' ' + (loc.cca2 || '')).toLowerCase();
             return searchString.includes(searchTerm);
         });
-        
         const userSelect = document.getElementById('user-location-select');
         let userHtml = '<option value="">🌐 استفاده از تنظیمات عمومی پنل</option>';
         filteredLocations.forEach(loc => {
@@ -5462,7 +5281,6 @@ window.filterUserLocations = function() {
         if (userSelect) userSelect.innerHTML = userHtml;
     } catch(e) {}
 };
-
 async function testUserSocksProxy() {
 	const btn = document.getElementById('test-user-proxy-btn');
 	const resultSpan = document.getElementById('test-user-proxy-result');
@@ -5475,10 +5293,8 @@ async function testUserSocksProxy() {
 	btn.disabled = true;
 	btn.innerText = 'صبر کنید...';
 	resultSpan.innerText = '';
-	
 	const controller = new AbortController();
 	const timeoutId = setTimeout(() => controller.abort(), 5000);
-
 	try {
 		const res = await fetch('/api/test-proxy', {
 			method: 'POST',
@@ -5510,9 +5326,7 @@ window.filterLocations = function() {
     const searchTerm = document.getElementById('location-search').value.toLowerCase().trim();
     const cachedLocations = localStorage.getItem('cached_locations_list');
     const activeIata = localStorage.getItem('cached_active_iata') || '';
-    
     if (!cachedLocations) return;
-    
     try {
         const allLocations = JSON.parse(cachedLocations);
         const filteredLocations = allLocations.filter(loc => {
@@ -5547,11 +5361,9 @@ window.filterLocations = function() {
                 alert('❌ خطا در دریافت تنظیمات برای بک‌آپ.');
             }
         }
-
         function triggerImportBackup() {
             document.getElementById('backup-file-input').click();
         }
-
         async function importUsersBackup(event) {
             const file = event.target.files[0];
             if (!file) return;
@@ -5564,7 +5376,6 @@ window.filterLocations = function() {
                     const parsedData = JSON.parse(e.target.result);
                     let backupUsers = [];
                     let backupSettings = null;
-
                     if (Array.isArray(parsedData)) {
                         backupUsers = parsedData;
                     } else if (parsedData && parsedData.users && Array.isArray(parsedData.users)) {
@@ -5574,13 +5385,11 @@ window.filterLocations = function() {
                         alert('❌ فایل پشتیبان نامعتبر است!');
                         return;
                     }
-
                     const validBackupUsers = backupUsers.filter(u => u && typeof u === 'object' && u.username);
                     if (validBackupUsers.length === 0 && !backupSettings) {
                         alert('❌ هیچ داده معتبری در فایل یافت نشد!');
                         return;
                     }
-
                     if (backupSettings && Object.keys(backupSettings).length > 0) {
                         const restoreSettings = await customConfirm('⚙️ فایل بک‌آپ شامل تنظیمات پنل نیز می‌باشد. آیا می‌خواهید تنظیمات هم بازگردانی شوند؟');
                         if (restoreSettings) {
@@ -5593,7 +5402,6 @@ window.filterLocations = function() {
                             } catch (err) {}
                         }
                     }
-
                     const existingUsernames = new Set((window.allUsers || []).map(u => u.username));
                     const duplicates = validBackupUsers.filter(u => existingUsernames.has(u.username));
                     let overwrite = false;
@@ -5732,7 +5540,7 @@ window.filterLocations = function() {
                 window.location.reload();
             }
         }
-const CURRENT_VERSION = '1.8.1';
+const CURRENT_VERSION = '1.8.2';
 const UPDATE_FIX = "constsCURRENT_VERSION='d.d.d'";
 		async function checkForUpdates(isManual = false) {
             try {
@@ -5782,7 +5590,6 @@ const UPDATE_FIX = "constsCURRENT_VERSION='d.d.d'";
                 document.getElementById('update-token-input').value = '';
             }
         }
-
         function submitTokenForUpdate() {
             const token = document.getElementById('update-token-input').value.trim();
             if (!token) {
@@ -5792,7 +5599,6 @@ const UPDATE_FIX = "constsCURRENT_VERSION='d.d.d'";
             toggleTokenModal(false);
             applyUpdate(token);
         }
-
         async function applyUpdate(token = null) {
             if (!token) toggleUpdateModal(false);
             const btn = document.getElementById('update-toggle');
@@ -5814,12 +5620,10 @@ const UPDATE_FIX = "constsCURRENT_VERSION='d.d.d'";
                 if (res.ok && data.success) {
                     const successModal = document.getElementById('update-success-modal');
                     const successCard = successModal.querySelector('div');
-                    
                     successModal.classList.remove('opacity-0', 'pointer-events-none');
                     successModal.classList.add('opacity-100', 'pointer-events-auto');
                     successCard.classList.remove('opacity-0', 'scale-95');
                     successCard.classList.add('opacity-100', 'scale-100');
-                    
                     setTimeout(() => {
                         window.location.reload();
                     }, 10000);
@@ -5885,8 +5689,6 @@ function toggleIpSelectorModal(show) {
         modal.classList.add('opacity-0', 'pointer-events-none');
         card.classList.remove('opacity-100', 'scale-100');
         card.classList.add('opacity-0', 'scale-95');
-		
-		// ریست کردن وضعیت تعویض خودکار هنگام بستن پنجره
 		const rotateToggle = document.getElementById('input-auto-rotate-ip-toggle');
 		if (rotateToggle) rotateToggle.checked = false;
 		const rotateTime = document.getElementById('input-auto-rotate-ip-time');
@@ -5899,7 +5701,6 @@ async function openIpSelectorModal() {
     document.getElementById('ip-loading-state').classList.remove('hidden');
     document.getElementById('ip-selection-form').classList.add('hidden');
     await fetchIpsList();
-	
 	const op = document.getElementById('hidden-ip-operator').value;
 	const selectOp = document.getElementById('ip-operator-select');
 	if (selectOp.querySelector('option[value="' + op + '"]')) {
@@ -5908,12 +5709,10 @@ async function openIpSelectorModal() {
 		selectOp.value = 'all';
 	}
 	document.getElementById('ip-count-input').value = document.getElementById('hidden-ip-count').value || 20;
-	
 	const isAuto = document.getElementById('hidden-auto-rotate').value === '1';
 	document.getElementById('input-auto-rotate-ip-toggle').checked = isAuto;
 	document.getElementById('input-auto-rotate-ip-time').value = document.getElementById('hidden-rotate-time').value;
 	if (typeof window.toggleAutoRotateIpInputs === 'function') window.toggleAutoRotateIpInputs(isAuto);
-
     document.getElementById('ip-loading-state').classList.add('hidden');
     document.getElementById('ip-selection-form').classList.remove('hidden');
 }
@@ -5942,12 +5741,10 @@ function applySelectedIps() {
         selectedIps = shuffled.slice(0, count);
     }
     document.getElementById('input-ips').value = selectedIps.join('\\n');
-	
 	document.getElementById('hidden-auto-rotate').value = document.getElementById('input-auto-rotate-ip-toggle').checked ? '1' : '0';
 	document.getElementById('hidden-rotate-time').value = document.getElementById('input-auto-rotate-ip-time').value || '';
 	document.getElementById('hidden-ip-operator').value = operator;
 	document.getElementById('hidden-ip-count').value = count;
-	
     toggleIpSelectorModal(false);
 }
 document.addEventListener('DOMContentLoaded', () => {
@@ -5970,37 +5767,30 @@ document.addEventListener('DOMContentLoaded', () => {
             renderPortCheckboxes();
             loadUsers();
             loadLocations();
-            
             window.usersRefreshIntervalId = null;
-            
             window.startRefreshInterval = function(intervalMs) {
                 if (window.usersRefreshIntervalId) {
                     clearInterval(window.usersRefreshIntervalId);
                 }
                 window.usersRefreshIntervalId = setInterval(() => loadUsers(true), intervalMs);
             };
-
             window.changeRefreshRate = function(val) {
                 const ms = parseInt(val, 10);
                 localStorage.setItem('zeus_refresh_rate', ms);
                 window.startRefreshInterval(ms);
                 showToast('نرخ رفرش پنل تغییر کرد');
             };
-
             const savedRate = localStorage.getItem('zeus_refresh_rate');
             const initialRate = savedRate ? parseInt(savedRate, 10) : 2000;
             const selectEl = document.getElementById('refresh-rate-select');
             if (selectEl) {
                 selectEl.value = String(initialRate);
             }
-            
             window.startRefreshInterval(initialRate);
-
 			setTimeout(() => checkForUpdates(false), 2000);
             setInterval(() => checkForUpdates(false), 60000);
             setTimeout(() => checkGlobalMessage(), 1000);
             setInterval(() => checkGlobalMessage(), 60000);
-
             window.addEventListener('mousedown', (e) => {
                 window._modalMouseDownTarget = e.target;
             });
@@ -6026,9 +5816,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             });
         });
-		
 let cachedProxyCountries = null;
-
 function toggleProxySelectorModal(show) {
     const modal = document.getElementById('proxy-selector-modal');
     const card = modal.querySelector('div');
@@ -6044,7 +5832,6 @@ function toggleProxySelectorModal(show) {
         card.classList.add('opacity-0', 'scale-95');
     }
 }
-
 		async function loadVipCountries() {
 			const select = document.getElementById('vip-country-select');
 			const btn = document.getElementById('vip-fetch-btn');
@@ -6053,13 +5840,10 @@ function toggleProxySelectorModal(show) {
 				const res = await fetch('https://api.github.com/repos/IR-NETLIFY/zeus/contents/proxy/proxy_vip');
 				if (!res.ok) throw new Error('API Error');
 				const data = await res.json();
-				
 				const validCountries = data
 					.filter(function(file) { return file.name.endsWith('.txt'); })
 					.map(function(file) { return file.name.replace('.txt', '').toUpperCase(); });
-				
 				if (validCountries.length === 0) throw new Error('Empty');
-				
 				select.innerHTML = '<option value="">یک کشور VIP انتخاب کنید...</option>';
 				validCountries.forEach(function(country) {
 					const option = document.createElement('option');
@@ -6074,25 +5858,19 @@ function toggleProxySelectorModal(show) {
 				btn.disabled = true;
 			}
 		}
-
 		async function loadVipProxy() {
 			const select = document.getElementById('vip-country-select');
 			const country = select.value;
 			const btn = document.getElementById('vip-fetch-btn');
-			
 			if (!country) return;
-			
 			btn.disabled = true;
 			btn.innerText = '...';
-			
 			try {
 				const url = 'https://raw.githubusercontent.com/IR-NETLIFY/zeus/refs/heads/main/proxy/proxy_vip/' + country + '.txt?t=' + Date.now();
 				const res = await fetch(url);
 				if (!res.ok) throw new Error('فایل یافت نشد');
-				
 				const text = await res.text();
 				const lines = text.split('\\n').map(function(l) { return l.trim(); }).filter(function(l) { return l.length > 5; });
-				
 				if (lines.length > 0) {
 					const randomProxy = lines[Math.floor(Math.random() * lines.length)];
 					document.getElementById('user-socks5-input').value = randomProxy;
@@ -6112,12 +5890,10 @@ function toggleProxySelectorModal(show) {
 				btn.innerText = 'دریافت';
 			}
 		}
-
 		async function openProxySelectorModal() {
 			toggleProxySelectorModal(true);
 			const select = document.getElementById('proxy-country-select');
 			const fetchBtn = document.getElementById('proxy-fetch-btn');
-			
 			const countriesList = [
 		  "AE", "AF", "AG", "AI", "AL", "AM", "AO", "AQ", "AR",
 		  "AS", "AT", "AU", "AW", "AX", "AZ", "BA", "BB", "BD", "BE",
@@ -6145,7 +5921,6 @@ function toggleProxySelectorModal(show) {
 		  "UG", "UM", "US", "UY", "UZ", "VA", "VC", "VE", "VG", "VI",
 		  "VN", "VU", "WF", "WS", "YE", "YT", "ZA", "ZM", "ZW"
 			];
-			
 			select.innerHTML = '';
 			countriesList.forEach(function(country) {
 				const option = document.createElement('option');
@@ -6154,12 +5929,9 @@ function toggleProxySelectorModal(show) {
 				option.textContent = flag + ' ' + country;
 				select.appendChild(option);
 			});
-			
 			fetchBtn.disabled = false;
-			
 			loadVipCountries();
 		}
-
 function populateProxyCountries(countries) {
     const select = document.getElementById('proxy-country-select');
     const fetchBtn = document.getElementById('proxy-fetch-btn');
@@ -6173,47 +5945,38 @@ function populateProxyCountries(countries) {
     });
     fetchBtn.disabled = false;
 }
-
 async function fetchAndLoadProxy() {
     const select = document.getElementById('proxy-country-select');
     const country = select.value;
     if (!country) return;
-
     const loadingState = document.getElementById('proxy-loading-state');
     const formState = document.getElementById('proxy-selection-form');
     const fetchBtn = document.getElementById('proxy-fetch-btn');
-
     loadingState.classList.remove('hidden');
     loadingState.innerText = 'در حال دریافت لیست پروکسی‌ها...';
     formState.classList.add('hidden');
     fetchBtn.disabled = true;
-
     try {
 		const sources = [
 			{ url: 'https://raw.githubusercontent.com/proxifly/free-proxy-list/refs/heads/main/proxies/countries/' + country.toUpperCase() + '/data.txt', prefix: '' },
 			{ url: 'https://raw.githubusercontent.com/IR-NETLIFY/zeus/refs/heads/main/proxy/' + country.toUpperCase() + '.txt', prefix: '' },
-    
 			{ url: 'https://api.proxyscrape.com/v2/?request=displayproxies&protocol=socks5&country=' + country, prefix: 'socks5://' },
 			{ url: 'https://api.proxyscrape.com/v2/?request=displayproxies&protocol=socks4&country=' + country, prefix: 'socks4://' },
 			{ url: 'https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&country=' + country, prefix: 'http://' },
 			{ url: 'https://api.proxyscrape.com/v2/?request=displayproxies&protocol=https&country=' + country, prefix: 'https://' },
-    
 			{ url: 'https://api.proxyscrape.com/v3/free-proxy-list/get?request=displayproxies&protocol=socks5&country=' + country, prefix: 'socks5://' },
 			{ url: 'https://api.proxyscrape.com/v3/free-proxy-list/get?request=displayproxies&protocol=socks4&country=' + country, prefix: 'socks4://' },
 			{ url: 'https://api.proxyscrape.com/v3/free-proxy-list/get?request=displayproxies&protocol==http&country=' + country, prefix: 'http://' },
 			{ url: 'https://api.proxyscrape.com/v3/free-proxy-list/get?request=displayproxies&protocol=https&country=' + country, prefix: 'https://' },
-    
 			{ url: 'https://api.proxyscrape.com/v3/free-proxy-list/get?request=displayproxies&protocol=socks5&country=' + country + '&format=text', prefix: 'socks5://' },
 			{ url: 'https://api.proxyscrape.com/v3/free-proxy-list/get?request=displayproxies&protocol=socks4&country=' + country + '&format=text', prefix: 'socks4://' },
 			{ url: 'https://api.proxyscrape.com/v3/free-proxy-list/get?request=displayproxies&protocol=http&country=' + country + '&format=text', prefix: 'http://' },
 			{ url: 'https://api.proxyscrape.com/v3/free-proxy-list/get?request=displayproxies&protocol=https&country=' + country + '&format=text', prefix: 'https://' },
-			
 			{ url: 'https://api.proxyscrape.com/v4/free-proxy-list/get?request=getproxies&protocol=socks5&country=' + country + '&format=text', prefix: 'socks5://' },
 			{ url: 'https://api.proxyscrape.com/v4/free-proxy-list/get?request=getproxies&protocol=socks4&country=' + country + '&format=text', prefix: 'socks4://' },
 			{ url: 'https://api.proxyscrape.com/v4/free-proxy-list/get?request=getproxies&protocol=http&country=' + country + '&format=text', prefix: 'http://' },
 			{ url: 'https://api.proxyscrape.com/v4/free-proxy-list/get?request=getproxies&protocol=https&country=' + country + '&format=text', prefix: 'https://' }
 		];
-
         const responses = await Promise.allSettled(sources.map(src => 
             fetch(src.url).then(async res => {
                 if (!res.ok) throw new Error();
@@ -6221,9 +5984,7 @@ async function fetchAndLoadProxy() {
                 return { text: text, prefix: src.prefix };
             })
         ));
-
         let combinedProxies = [];
-
         for (const res of responses) {
             if (res.status === 'fulfilled' && res.value && res.value.text) {
                 const rawLines = res.value.text.split('\\n');
@@ -6239,28 +6000,22 @@ async function fetchAndLoadProxy() {
                 }
             }
         }
-
         let lines = [...new Set(combinedProxies.filter(l => l.match(/^(socks4|socks5|socks|http|https):\\/\\//i)))];
-
         if (lines.length > 0) {
             for (let i = lines.length - 1; i > 0; i--) {
                 const j = Math.floor(Math.random() * (i + 1));
                 [lines[i], lines[j]] = [lines[j], lines[i]];
             }
-
             let bestProxy = null;
             let fallbackProxy = null;
             const BATCH_SIZE = 5;
-
             for (let i = 0; i < lines.length; i += BATCH_SIZE) {
                 const batch = lines.slice(i, i + BATCH_SIZE);
                 loadingState.innerText = 'تعداد ' + lines.length + ' پروکسی پیدا شد درحال اسکن\\nاسکن گروه ' + (Math.floor(i / BATCH_SIZE) + 1) + ' (۵ تست برای هر کدام)...';
-
                 const testResults = await Promise.allSettled(batch.map(async (candidate) => {
                     let successCount = 0;
                     let totalPing = 0;
                     let failCount = 0;
-                    
                     for(let t = 0; t < 5; t++) {
                         const controller = new AbortController();
                         const timeoutId = setTimeout(() => controller.abort(), 3500);
@@ -6283,16 +6038,13 @@ async function fetchAndLoadProxy() {
                             clearTimeout(timeoutId);
                             failCount++;
                         }
-                        
                         if (failCount > 2) break;
                     }
-                    
                     if (successCount > 0) {
                         return { proxy: candidate, successCount: successCount, avgPing: totalPing / successCount };
                     }
                     throw new Error();
                 }));
-
                 const successfulProxies = testResults
                     .filter(r => r.status === 'fulfilled')
                     .map(r => r.value)
@@ -6302,7 +6054,6 @@ async function fetchAndLoadProxy() {
                         }
                         return a.avgPing - b.avgPing;
                     });
-
                 if (successfulProxies.length > 0) {
                     const topCandidate = successfulProxies[0];
                     if (topCandidate.successCount >= 3) {
@@ -6313,11 +6064,9 @@ async function fetchAndLoadProxy() {
                     }
                 }
             }
-
             if (!bestProxy && fallbackProxy) {
                 bestProxy = fallbackProxy.proxy;
             }
-
             if (bestProxy) {
                 document.getElementById('user-socks5-input').value = bestProxy;
                 document.getElementById('test-user-proxy-result').innerText = '';
@@ -6338,7 +6087,6 @@ async function fetchAndLoadProxy() {
     }
 }
 const WORKER_DONATE_URL = 'https://noisy-meadow-a466.ir-netlify.workers.dev/';
-
 		function toggleDonateModal(show) {
 			const modal = document.getElementById('donate-modal');
 			const card = document.getElementById('donate-modal-card');
@@ -6360,7 +6108,6 @@ const WORKER_DONATE_URL = 'https://noisy-meadow-a466.ir-netlify.workers.dev/';
 				}
 			}
 		}
-
 		function extractIPFromProxy(proxyStr) {
 			const configMatch = proxyStr.match(/@([^:]+):/);
 			if (configMatch && configMatch[1]) return configMatch[1];
@@ -6368,33 +6115,27 @@ const WORKER_DONATE_URL = 'https://noisy-meadow-a466.ir-netlify.workers.dev/';
 			if (ipMatch) return ipMatch[0];
 			return null;
 		}
-
 		async function testAndDonateProxy() {
 			const proxyInput = document.getElementById('donate-proxy-input').value.trim();
 			const btn = document.getElementById('donate-submit-btn');
 			const resultSpan = document.getElementById('donate-result');
-			
 			if (!proxyInput) {
 				resultSpan.innerText = 'لطفاً پروکسی را وارد کنید!';
 				resultSpan.className = 'text-[11px] font-bold text-red-500 w-full mt-1';
 				return;
 			}
-
 			const strictProxyPattern = /^(?:(?:socks4|socks5|socks|http|https):\\/\\/)?([a-zA-Z0-9]{8}):([a-zA-Z0-9]{12})@([^:\\/]+):(\\d+)$/i;
 			if (!strictProxyPattern.test(proxyInput)) {
 				resultSpan.innerText = '❌ فرمت نامعتبر! پروکسی اختصاصی باید دارای یوزر ۸ کاراکتری و رمز ۱۲ کاراکتری باشد.';
 				resultSpan.className = 'text-[11px] font-bold text-red-500 w-full mt-1 break-words';
 				return;
 			}
-
 			btn.disabled = true;
 			btn.innerText = 'صبر کنید...';
 			resultSpan.innerText = 'در حال تست با اسکنر پنل...';
 			resultSpan.className = 'text-[11px] font-bold text-emerald-500 w-full mt-1';
-			
 			const controller = new AbortController();
 			const timeoutId = setTimeout(() => controller.abort(), 6000);
-
 			try {
 				const testRes = await fetch('/api/test-proxy', {
 					method: 'POST',
@@ -6403,16 +6144,12 @@ const WORKER_DONATE_URL = 'https://noisy-meadow-a466.ir-netlify.workers.dev/';
 					signal: controller.signal
 				});
 				clearTimeout(timeoutId);
-				
 				const testData = await testRes.json();
-				
 				if (!testRes.ok || !testData.success) {
 					throw new Error(testData.error || 'پروکسی مسدود یا خاموش است');
 				}
-				
 				const countryCode = testData.country || 'UN';
 				resultSpan.innerText = 'پروکسی سالم است! در حال ارسال (' + countryCode + ')...';
-
 				const donateResponse = await fetch(WORKER_DONATE_URL, {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
@@ -6421,9 +6158,7 @@ const WORKER_DONATE_URL = 'https://noisy-meadow-a466.ir-netlify.workers.dev/';
 						country: countryCode
 					})
 				});
-
 				const donateData = await donateResponse.json();
-
 				if (donateData.success) {
 					resultSpan.innerText = '✅ ' + donateData.message;
 					resultSpan.className = 'text-[11px] font-bold text-green-600 w-full mt-1';
@@ -6432,12 +6167,10 @@ const WORKER_DONATE_URL = 'https://noisy-meadow-a466.ir-netlify.workers.dev/';
 					resultSpan.innerText = '❌ خطا: ' + donateData.error;
 					resultSpan.className = 'text-[11px] font-bold text-red-500 w-full mt-1 break-words';
 				}
-
 			} catch (error) {
 				clearTimeout(timeoutId);
 				let errorMsg = error.message;
 				if (error.name === 'AbortError') errorMsg = 'تایم‌اوت در تست پروکسی';
-				
 				resultSpan.innerText = '❌ خطا: ' + errorMsg;
 				resultSpan.className = 'text-[11px] font-bold text-red-500 w-full mt-1 break-words';
 			} finally {
@@ -6493,6 +6226,7 @@ window.addEventListener('click', (e) => {
             </div>
             <h1 class="text-xl font-bold tracking-tight text-gray-900 dark:text-white mb-1">پنل زئوس - وضعیت اشتراک</h1>
             <p id="display-username" class="text-sm font-bold text-blue-500 tracking-wide font-mono mb-2"></p>
+            <p id="display-flag" class="text-2xl font-bold tracking-wide mb-3" style="display:none;"></p>
             <div id="live-connections-badge" style="display: none !important;">
                 <span class="w-2 h-2 rounded-full bg-green-600 animate-pulse"></span>
                 <span id="live-connections-text" dir="rtl">۰ دستگاه متصل</span>
@@ -6518,7 +6252,6 @@ window.addEventListener('click', (e) => {
                     <span id="limit-vol" class="font-bold text-gray-800 dark:text-zinc-200" dir="ltr">-</span>
                 </div>
             </div>
-            
             <div class="bg-white/40 dark:bg-zinc-900/30 border border-gray-200 dark:border-amoled-border rounded-xl p-3 shadow-sm flex flex-col justify-between">
                 <div class="flex justify-between items-center mb-2">
                     <span class="text-[10px] font-semibold text-gray-600 dark:text-zinc-400 flex items-center gap-1">
@@ -6535,7 +6268,6 @@ window.addEventListener('click', (e) => {
                     <span id="total-days" class="font-bold text-gray-800 dark:text-zinc-200" dir="rtl">-</span>
                 </div>
             </div>
-
             <div class="bg-white/40 dark:bg-zinc-900/30 border border-gray-200 dark:border-amoled-border rounded-xl p-3 shadow-sm flex flex-col justify-between">
                 <div class="flex justify-between items-center mb-2">
                     <span class="text-[10px] font-semibold text-gray-600 dark:text-zinc-400 flex items-center gap-1">
@@ -6552,7 +6284,6 @@ window.addEventListener('click', (e) => {
                     <span id="limit-req" class="font-bold text-gray-800 dark:text-zinc-200" dir="ltr">-</span>
                 </div>
             </div>
-
             <div class="bg-white/40 dark:bg-zinc-900/30 border border-gray-200 dark:border-amoled-border rounded-xl p-3 shadow-sm flex flex-col justify-between">
                 <div class="flex justify-between items-center mb-2">
                     <span class="text-[10px] font-semibold text-gray-600 dark:text-zinc-400 flex items-center gap-1">
@@ -6612,7 +6343,6 @@ window.addEventListener('click', (e) => {
             </svg>
             گیت‌هاب
         </a>
-
         <a href="https://t.me/ZEUS_PANEL_BOT" target="_blank" class="flex items-center gap-2 px-4 py-2 bg-white dark:bg-amoled-card border border-gray-200 dark:border-amoled-border rounded-full shadow-sm hover:shadow-md transition text-sm font-bold text-gray-700 dark:text-zinc-300 hover:text-sky-500 dark:hover:text-sky-400 group">
             <svg class="w-5 h-5 text-sky-500 group-hover:scale-110 transition" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69a.2.2 0 00-.05-.18c-.06-.05-.14-.03-.21-.02-.09.02-1.49.94-4.22 2.79-.4.27-.76.41-1.08.4-.36-.01-1.04-.2-1.55-.37-.63-.2-1.12-.31-1.08-.66.02-.18.27-.36.74-.55 2.92-1.27 4.86-2.11 5.83-2.51 2.78-1.16 3.35-1.36 3.73-1.37.08 0 .27.02.39.12.1.08.13.19.14.27-.01.06.01.24 0 .24z"/>
@@ -6620,7 +6350,6 @@ window.addEventListener('click', (e) => {
             ZEUS_PANEL_BOT@
         </a>
     </div>
-	
     <div class="flex flex-wrap items-center gap-3 sm:gap-4 justify-center">
         <a href="https://zeus-install.ir-netlify.workers.dev/" target="_blank" class="flex items-center gap-2 px-4 py-2 bg-white dark:bg-amoled-card border border-gray-200 dark:border-amoled-border rounded-full shadow-sm hover:shadow-md transition text-sm font-bold text-amber-600 dark:text-amber-400 hover:text-amber-500 dark:hover:text-amber-300 group">
             <svg class="w-5 h-5 text-amber-500 dark:text-amber-400 group-hover:scale-110 transition" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
@@ -6628,7 +6357,6 @@ window.addEventListener('click', (e) => {
             </svg>
             ساخت رایگان پنل
         </a>
-
         <a href="https://donatonion.ir-netlify.workers.dev" target="_blank" class="flex items-center gap-2 px-4 py-2 bg-white dark:bg-amoled-card border border-gray-200 dark:border-amoled-border rounded-full shadow-sm hover:shadow-md transition text-sm font-bold text-red-600 dark:text-red-400 hover:text-red-500 dark:hover:text-red-300 group">
             <svg class="w-5 h-5 text-red-500 dark:text-red-400 group-hover:scale-110 transition" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3 9.24 3 10.91 3.81 12 5.08 13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
@@ -6646,16 +6374,12 @@ window.addEventListener('click', (e) => {
             const colors = type === 'error' 
                 ? 'bg-red-50 dark:bg-red-900/40 border-red-200 dark:border-red-800 text-red-600 dark:text-red-400' 
                 : 'bg-green-50 dark:bg-green-900/40 border-green-200 dark:border-green-800 text-green-700 dark:text-green-500';
-            
             toast.className = 'px-4 py-3 border rounded-xl shadow-lg font-bold text-sm transform transition-all duration-300 -translate-y-full opacity-0 ' + colors;
             toast.innerText = message;
-            
             container.appendChild(toast);
-            
             requestAnimationFrame(() => {
                 toast.classList.remove('-translate-y-full', 'opacity-0');
             });
-            
             setTimeout(() => {
                 toast.classList.add('-translate-y-full', 'opacity-0');
                 setTimeout(() => toast.remove(), 300);
@@ -6726,16 +6450,51 @@ window.addEventListener('click', (e) => {
                 card.classList.add('opacity-0', 'scale-95');
             }
         }
-
         function showSubQr() {
             const link = window.location.protocol + '//' + getHost() + '/sub/' + encodeURIComponent(window.statusUser.username);
             toggleQrModal(true, link);
+        }
+		function getFlagEmoji(countryCode) {
+            if (!countryCode) return '🌐';
+            const codePoints = countryCode.toUpperCase().split('').map(char => 127397 + char.charCodeAt(0));
+            try {
+                return String.fromCodePoint(...codePoints);
+            } catch (e) {
+                return '🌐';
+            }
         }
         document.addEventListener('DOMContentLoaded', () => {
             const u = window.statusUser;
             if (!u) return;
             const limit = u.ip_limit !== undefined ? u.ip_limit : u.max_connections;
             document.getElementById('display-username').innerText = u.username;
+			
+const flagContainer = document.getElementById('display-flag');
+if (u.user_proxy_iata) {
+    const flag = getFlagEmoji(u.user_proxy_iata);
+    flagContainer.innerText = flag + " " + u.user_proxy_iata.toUpperCase();
+    flagContainer.style.display = 'block'; 
+} else if (u.user_socks5 || u.user_proxy_ip) {
+    flagContainer.innerText = "⏳ تست پروکسی...";
+    flagContainer.style.display = 'block'; 
+    const targetProxy = u.user_socks5 || u.user_proxy_ip;
+    fetch('/api/test-proxy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ proxy: targetProxy })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success && data.country) {
+            flagContainer.innerText = getFlagEmoji(data.country);
+        } else {
+            flagContainer.innerText = "🌐";
+        }
+    })
+    .catch(() => {
+        flagContainer.innerText = "🌐";
+    });
+}
             const badge = document.getElementById('live-connections-badge');
             badge.classList.remove('hidden');
             if (u.online_count && u.online_count > 0) {
@@ -6843,12 +6602,9 @@ window.addEventListener('click', (e) => {
                 statusText.innerText = '✅ وضعیت اشتراک: فعال و متصل';
             }
         });
-
         window.addEventListener('click', (e) => {
             if (e.target.id === 'qr-modal') toggleQrModal(false);
         });
-		
-
     </script>
 </body>
 </html>`,
