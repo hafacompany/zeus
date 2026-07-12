@@ -3886,14 +3886,17 @@ ${COMMON_TOAST_HTML}
                 const reqCard = document.getElementById('card-cf-requests');
                 const warningBtn = document.getElementById('cf-warning-btn');
                 if (cfRequests >= 90000) {
-                    if (reqCard) {
-                        reqCard.className = "bg-red-50 dark:bg-red-950/20 border border-red-500 rounded-xl p-2.5 shadow-[0_0_15px_rgba(239,68,68,0.4)] flex flex-col justify-center gap-1 hover:shadow-md transition duration-300 relative overflow-hidden group min-h-[64px] animate-pulse";
-                    }
-                    if (warningBtn) {
-                        warningBtn.classList.remove('hidden');
-                    }
-                    openUsageWarning();
-                } else {
+					if (reqCard) {
+						reqCard.className = "bg-red-50 dark:bg-red-950/20 border border-red-500 rounded-xl p-2.5 shadow-[0_0_15px_rgba(239,68,68,0.4)] flex flex-col justify-center gap-1 hover:shadow-md transition duration-300 relative overflow-hidden group min-h-[64px] animate-pulse";
+					}
+					if (warningBtn) {
+						warningBtn.classList.remove('hidden');
+					}
+					if (!window.hasShownUsageWarning) {
+						openUsageWarning();
+						window.hasShownUsageWarning = true;
+					}
+				} else {
                     if (reqCard) {
                         reqCard.className = "bg-white dark:bg-amoled-card border border-gray-200 dark:border-amoled-border rounded-xl p-2.5 shadow-sm flex flex-col justify-center gap-1 hover:shadow-md hover:border-orange-400 dark:hover:border-orange-500/50 transition duration-300 relative overflow-hidden group min-h-[64px]";
                     }
@@ -4538,6 +4541,7 @@ function editUser(encodedUsername) {
                     const response = await fetch('/api/users/' + encodeURIComponent(username), { method: 'DELETE' });
                     if (response.ok) {
                         alert('✅ کاربر با موفقیت حذف شد.');
+                        window.selectedUsernames.delete(username);
                         await loadUsers(true);
                     } else {
                         const errData = await response.json();
@@ -5080,7 +5084,7 @@ window.filterLocations = function() {
                 window.location.reload();
             }
         }
-const CURRENT_VERSION = '1.8.5';
+const CURRENT_VERSION = '1.8.6';
 const UPDATE_FIX = "constsCURRENT_VERSION='d.d.d'";
 		async function checkForUpdates(isManual = false) {
             try {
