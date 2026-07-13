@@ -29,7 +29,7 @@
 
 <td width="50%" valign="middle" align="center">
 
-<img  src="https://raw.githubusercontent.com/IR-NETLIFY/zeus/refs/heads/main/photos/bot.png"  width="100%"  alt="Zeus Panel Status"  style="border-radius: 12px;">
+<img  src="https://raw.githubusercontent.com/IR-NETLIFY/zeus/refs/heads/main/photos/bot.jpg"  width="100%"  alt="Zeus Panel Status"  style="border-radius: 12px;">
 
 </td>
 
