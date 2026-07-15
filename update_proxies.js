@@ -188,29 +188,12 @@ async function main() {
         fs.mkdirSync(PROXY_DIR);
     }
     
-    // Overwrite existing country text files with the new working proxies
-    const files = fs.readdirSync(PROXY_DIR);
-    const countryFiles = files.filter(f => f.endsWith('.txt'));
-    
-    // Map existing countries so we clear them if we have no new working proxies for them
-    const existingCountries = new Set(countryFiles.map(f => f.replace('.txt', '').toUpperCase()));
-    
     // Write new working proxies to country files
     for (const [country, proxies] of Object.entries(countryGroups)) {
         const filename = `${country}.txt`;
         const filepath = path.join(PROXY_DIR, filename);
         fs.writeFileSync(filepath, proxies.join('\n') + '\n', 'utf8');
         console.log(`Updated ${filename} with ${proxies.length} proxies.`);
-        existingCountries.delete(country);
-    }
-    
-    // Clear files for countries that no longer have any working proxies
-    for (const country of existingCountries) {
-        const filename = `${country}.txt`;
-        const filepath = path.join(PROXY_DIR, filename);
-        // We write an empty string to clear the file rather than deleting it
-        fs.writeFileSync(filepath, '', 'utf8');
-        console.log(`Cleared ${filename} (no working proxies found).`);
     }
     
     console.log('Proxy update complete!');
